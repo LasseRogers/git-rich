@@ -153,8 +153,13 @@ def main() -> None:
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
+    key = os.environ.get("ODDSPAPI_KEY")
+    if not key:
+        # Checked before any request, since a keyless call still counts against the quota.
+        sys.exit("ODDSPAPI_KEY is not set")
+
     now = datetime.now(timezone.utc).replace(microsecond=0)
-    client = Client(os.environ["ODDSPAPI_KEY"], args.out / "usage" / f"{now:%Y-%m}.json", args.budget)
+    client = Client(key, args.out / "usage" / f"{now:%Y-%m}.json", args.budget)
 
     try:
         collect(client, args.out, args.bookmaker, now)
