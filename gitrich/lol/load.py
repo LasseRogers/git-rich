@@ -104,7 +104,7 @@ def load_file(conn: psycopg.Connection, path: Path) -> LoadStats:
 
 
 def _read(path: Path) -> pd.DataFrame:
-    df = pd.read_csv(path, low_memory=False)
+    df = pd.read_csv(path, low_memory=False, dtype={"gameid": str, "patch": str})
     df = df[df["gameid"].notna()].drop_duplicates(["gameid", "participantid"], keep="last")
     df["gameid"] = df["gameid"].astype(str)
     return df
@@ -183,7 +183,7 @@ def _games(team_rows: pd.DataFrame) -> pd.DataFrame:
     blue = team_rows[team_rows["side"] == "blue"].set_index("gameid")
     red = team_rows[team_rows["side"] == "red"].set_index("gameid")
 
-    return pd.DataFrame({
+    games = pd.DataFrame({
         "game_id": blue.index,
         "league": blue["league"],
         "year": blue["year"].astype(int),
@@ -197,7 +197,9 @@ def _games(team_rows: pd.DataFrame) -> pd.DataFrame:
         "winner_side": blue["result"].map({1: "blue", 0: "red"}),
         "duration_s": blue["gamelength"],
         "data_completeness": blue["datacompleteness"],
-    }).dropna(subset=["blue_team_id", "red_team_id", "winner_side"]).reset_index(drop=True)
+    }).dropna(subset=["blue_team_id", "red_team_id", "winner_side"])
+    # Unregistered teams share a placeholder name in the source, so both sides can resolve to the same team.
+    return games[games["blue_team_id"] != games["red_team_id"]].reset_index(drop=True)
 
 
 def _upsert_games(conn: psycopg.Connection, games: pd.DataFrame) -> None:
