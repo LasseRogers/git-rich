@@ -1,5 +1,8 @@
 name: git-rich
 
+x-app-env: &app-env
+  DATABASE_URL: postgresql+psycopg://${USER:?USER is not set}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+
 services:
   postgres:
     image: postgres:17-alpine
@@ -24,9 +27,17 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    environment:
-      DATABASE_URL: postgresql+psycopg://${USER:?USER is not set}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    environment: *app-env
     command: alembic upgrade head
+
+  ingest:
+    build: .
+    profiles: [jobs]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment: *app-env
+    entrypoint: [ingest-lol]
 
   mlflow:
     build: ./services/mlflow

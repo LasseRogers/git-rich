@@ -6,7 +6,12 @@ dependencies = [
     "sqlalchemy==2.1.6",
     "alembic==1.20.1",
     "psycopg[binary]==3.3.6",
+    "pandas==3.1.0",
+    "gdown==6.4.2",
 ]
+
+[project.scripts]
+ingest-lol = "gitrich.lol.ingest:main"
 
 [build-system]
 requires = ["setuptools>=70"]
