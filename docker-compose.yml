@@ -19,6 +19,15 @@ services:
       timeout: 5s
       retries: 10
 
+  migrate:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://${USER:?USER is not set}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    command: alembic upgrade head
+
   mlflow:
     build: ./services/mlflow
     restart: unless-stopped

@@ -1,34 +1,24 @@
 # git-rich
 
-Match outcome prediction for esports, compared against bookmaker odds.
-
-## Stack
-
-- Postgres for match, odds and prediction data
-- MLflow for experiment tracking and the model registry
-- Docker Compose to run everything locally
+Esports match prediction, benchmarked against bookmaker odds.
 
 ## Setup
 
 ```bash
-cp .env.example .env    # set a password
+cp .env.example .env
 docker compose up -d --build
 ```
 
-The database user is taken from `$USER`. Avoid `@ : / #` in the password.
+The Postgres user is taken from `$USER`. The password is embedded in connection URLs, so avoid `@ : / #`.
 
-| Service  | Address                 |
-|----------|-------------------------|
-| MLflow   | http://localhost:5050   |
-| Postgres | localhost:5432          |
+| Service  | Address               |
+|----------|-----------------------|
+| MLflow   | http://localhost:5050 |
+| Postgres | localhost:5432        |
 
-Ports can be changed in `.env`.
+## Database
 
-## Commands
+Schemas are managed with Alembic and applied by the `migrate` service on startup.
 
-```bash
-docker compose ps              # status
-docker compose logs -f mlflow  # follow logs
-docker compose down            # stop, keep data
-docker compose down -v         # stop, delete data
-```
+- `core`: teams, players, matches, odds, predictions, bets
+- `lol`: League of Legends games and per-game stats
