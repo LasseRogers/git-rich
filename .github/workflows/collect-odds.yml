@@ -1,0 +1,56 @@
+name: collect-odds
+
+on:
+  schedule:
+    # Before the Asian, European and late slates. The free tier allows ~250 requests a month.
+    - cron: "23 7 * * *"
+    - cron: "23 15 * * *"
+    - cron: "23 21 * * *"
+  workflow_dispatch:
+    inputs:
+      bookmakers:
+        description: Space-separated bookmaker slugs
+        default: pinnacle
+
+permissions:
+  contents: write
+
+concurrency:
+  group: collect-odds
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: src
+
+      - uses: actions/checkout@v4
+        with:
+          ref: odds-data
+          path: data
+
+      - name: Collect
+        working-directory: src
+        env:
+          ODDSPAPI_KEY: ${{ secrets.ODDSPAPI_KEY }}
+          BOOKMAKERS: ${{ inputs.bookmakers || (github.event.schedule == '23 21 * * *' && 'pinnacle' || 'pinnacle bet365') }}
+        run: |
+          args=()
+          for b in $BOOKMAKERS; do args+=(--bookmaker "$b"); done
+          python3 -m gitrich.odds.collect --out ../data "${args[@]}"
+
+      # Runs on failure too, so the request counter is never lost.
+      - name: Commit
+        if: always()
+        working-directory: data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m "Odds snapshot $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push
