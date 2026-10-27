@@ -81,6 +81,10 @@ services:
     <<: *ml-job
     entrypoint: [train-lgbm]
 
+  train-logreg:
+    <<: *ml-job
+    entrypoint: [train-logreg]
+
   backtest:
     <<: *ml-job
     entrypoint: [backtest]

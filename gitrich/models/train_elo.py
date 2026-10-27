@@ -14,7 +14,7 @@ from gitrich.models import elo, metrics
 
 log = logging.getLogger("train-elo")
 
-EXPERIMENT = "lol-series-elo"
+EXPERIMENT = "lol-series"
 
 GRID = {
     "mode": ["team", "player"],
@@ -38,7 +38,7 @@ def main() -> None:
 
     mlflow.set_experiment(EXPERIMENT)
     with mlflow.start_run(run_name="grid") as parent:
-        mlflow.set_tag("predictions", "series")
+        mlflow.set_tags({"predictions": "series", "model": "elo"})
         mlflow.log_params({"valid_from": args.valid_from, "test_from": args.test_from, "games": len(games)})
 
         results = []

@@ -74,25 +74,30 @@ def summarize(bets: pd.DataFrame) -> dict:
     }
 
 
-def load_predictions(experiment: str, run_id: str | None) -> tuple[str, pd.DataFrame]:
+def load_predictions(experiment: str, model: str, run_id: str | None) -> tuple[str, str, pd.DataFrame]:
+    """Predictions from the given run, or the latest finished run of `model`. Returns (run_id, model, preds)."""
     if run_id is None:
         runs = mlflow.search_runs(
             experiment_names=[experiment],
-            filter_string="tags.predictions = 'series' AND attributes.status = 'FINISHED'",
+            filter_string=f"tags.predictions = 'series' AND tags.model = '{model}' AND attributes.status = 'FINISHED'",
             order_by=["attributes.start_time DESC"],
             max_results=1,
         )
         if runs.empty:
-            raise SystemExit(f"no finished run in {experiment}; train a model first")
+            raise SystemExit(f"no finished {model} run in {experiment}; train one first")
         run_id = runs.run_id.iloc[0]
+    else:
+        model = mlflow.get_run(run_id).data.tags.get("model", "unknown")
     path = mlflow.artifacts.download_artifacts(run_id=run_id, artifact_path="series_predictions.parquet")
-    return run_id, pd.read_parquet(path)
+    return run_id, model, pd.read_parquet(path)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="backtest", description="Bet model predictions against collected odds.")
-    parser.add_argument("--experiment", default="lol-series-elo")
-    parser.add_argument("--run", help="MLflow run with series_predictions.parquet; defaults to the latest")
+    parser.add_argument("--experiment", default="lol-series")
+    parser.add_argument("--model", choices=["elo", "lgbm", "logreg"], default="elo",
+                        help="backtest the latest run of this model")
+    parser.add_argument("--run", help="MLflow run with series_predictions.parquet; overrides --model")
     parser.add_argument("--bookmaker", default=SHARP)
     parser.add_argument("--threshold", type=float, default=0.03, help="minimum expected value per unit staked")
     parser.add_argument("--entry", choices=["opening", "closing"], default="opening",
@@ -101,7 +106,7 @@ def main() -> None:
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-    run_id, preds = load_predictions(args.experiment, args.run)
+    run_id, model, preds = load_predictions(args.experiment, args.model, args.run)
     with connect() as conn:
         prices = match_prices(conn)
     log.info("%d predictions from run %s, %d matches with odds", len(preds), run_id, prices.match_id.nunique())
@@ -111,9 +116,9 @@ def main() -> None:
     market = market_comparison(preds, prices)
 
     mlflow.set_experiment(EXPERIMENT)
-    with mlflow.start_run(run_name=f"{args.experiment} {args.bookmaker} {args.entry}"):
-        mlflow.log_params({"source_experiment": args.experiment, "source_run": run_id, "bookmaker": args.bookmaker,
-                           "threshold": args.threshold, "entry": args.entry})
+    with mlflow.start_run(run_name=f"{model} {args.bookmaker} {args.entry}"):
+        mlflow.log_params({"source_experiment": args.experiment, "source_run": run_id, "model": model,
+                           "bookmaker": args.bookmaker, "threshold": args.threshold, "entry": args.entry})
         mlflow.log_metrics({k: v for k, v in {**result, **{f"market_{k}": v for k, v in market.items()}}.items()
                             if v == v})
         if not bets.empty:

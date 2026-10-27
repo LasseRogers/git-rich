@@ -22,6 +22,7 @@ ingest-lol = "gitrich.lol.ingest:main"
 ingest-odds = "gitrich.odds.ingest:main"
 train-elo = "gitrich.models.train_elo:main"
 train-lgbm = "gitrich.models.train_lgbm:main"
+train-logreg = "gitrich.models.train_logreg:main"
 backtest = "gitrich.models.backtest:main"
 
 [build-system]

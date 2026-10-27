@@ -14,7 +14,7 @@ from gitrich.models import features, metrics, registry
 
 log = logging.getLogger("train-lgbm")
 
-EXPERIMENT = "lol-series-lgbm"
+EXPERIMENT = "lol-series"
 
 PARAMS = {
     "objective": "binary",
@@ -111,7 +111,7 @@ def main() -> None:
 
     mlflow.set_experiment(EXPERIMENT)
     with mlflow.start_run(run_name=args.name or "+".join(groups)) as run:
-        mlflow.set_tag("predictions", "series")
+        mlflow.set_tags({"predictions": "series", "model": "lgbm"})
         mlflow.log_params({"groups": args.groups, "train_from": args.train_from, "test_from": args.test_from,
                            "k_league": args.k_league, **{f"lgb_{k}": v for k, v in PARAMS.items()}})
         mlflow.log_metrics({f"test_{k}": v for k, v in metrics.summary(test.team1_won, test.p_team1).items()})

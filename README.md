@@ -84,7 +84,7 @@ The import also maps OddsPapi teams to ours and links each odds event to its mat
 
 ## Models
 
-Experiments are tracked in MLflow under one experiment per model family.
+Every model logs to the `lol-series` experiment in MLflow, tagged `model=elo`, `lgbm` or `logreg`, so runs can be compared side by side on test log loss.
 
 ### Elo baseline
 
@@ -100,10 +100,11 @@ Parameters are tuned on 2019–2022 and reported on 2023 onwards, which is never
 
 ```bash
 docker compose run --rm backtest                       # latest Elo run vs Pinnacle
+docker compose run --rm backtest --model lgbm          # latest LightGBM run
 docker compose run --rm backtest --bookmaker bet365 --threshold 0.05
 ```
 
-Bets one unit on the side with the larger expected value when it exceeds the threshold, at the first (`--entry opening`) or last (`--entry closing`) pre-match price collected. Reports ROI, hit rate and closing line value against Pinnacle's margin-free closing price, plus the model's log loss next to the market's on the same matches. Results are logged to the `lol-backtest` experiment.
+Takes predictions from the latest run of `--model` (`elo` by default), or from a specific run with `--run`. Bets one unit on the side with the larger expected value when it exceeds the threshold, at the first (`--entry opening`) or last (`--entry closing`) pre-match price collected. Reports ROI, hit rate and closing line value against Pinnacle's margin-free closing price, plus the model's log loss next to the market's on the same matches. Results are logged to the `lol-backtest` experiment.
 
 ROI needs hundreds of bets before it means much; CLV and the log loss comparison are the earlier signals.
 
@@ -114,7 +115,7 @@ docker compose run --rm train-lgbm                          # all feature groups
 docker compose run --rm train-lgbm --groups elo,league      # ablation
 ```
 
-Gradient boosting on walk-forward pre-series features, grouped so groups can be switched on and off and compared in the `lol-series-lgbm` experiment:
+Gradient boosting on walk-forward pre-series features, grouped so groups can be switched on and off and compared:
 
 | Group | Features |
 |---|---|
@@ -125,7 +126,17 @@ Gradient boosting on walk-forward pre-series features, grouped so groups can be 
 | `schedule` | rest days, games in the last week |
 | `format` | best-of, playoffs |
 
-Each test season is predicted by a model trained on all earlier seasons except the last, which is used for early stopping. Every series is seen from both sides during training and prediction, so team order carries no information. The run logs the Elo log loss on the same series for comparison, and its `series_predictions.parquet` works with `backtest --experiment lol-series-lgbm`.
+Each test season is predicted by a model trained on all earlier seasons except the last, which is used for early stopping. Every series is seen from both sides during training and prediction, so team order carries no information. The run logs the Elo log loss on the same series for comparison, and its `series_predictions.parquet` works with `backtest --model lgbm`.
+
+### Logistic regression
+
+```bash
+docker compose run --rm train-logreg
+```
+
+The LightGBM features in an L2-regularised logistic regression, with the same walk-forward seasons and training window, to measure what the trees add over a linear model. Standardised coefficients are logged per test season. The model isn't registered, so it never becomes the champion.
+
+Features that describe the match rather than a team (`best_of`, `playoffs`, `cross_league`) don't change sign when the teams are swapped, so a symmetric linear model gives them no weight. They can only matter through interactions with the difference features.
 
 ## Prediction API
 
