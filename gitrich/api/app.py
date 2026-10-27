@@ -7,6 +7,7 @@ from fastapi import FastAPI, HTTPException, Query
 from psycopg.types.json import Jsonb
 
 from gitrich.api.predictor import MODEL_NAME, Predictor
+from gitrich.betting import paper
 from gitrich.db import connect
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -54,8 +55,8 @@ def predict(team1_id: int, team2_id: int) -> dict:
         pred = predictor.predict(team1_id, team2_id, datetime.now(timezone.utc))
         players = _names(conn, "core.players", "handle", pred["lineup_team1"] + pred["lineup_team2"])
     return {
-        "team1": {"id": team1_id, "name": names[team1_id], "lineup": [players.get(p) for p in pred["lineup_team1"]]},
-        "team2": {"id": team2_id, "name": names[team2_id], "lineup": [players.get(p) for p in pred["lineup_team2"]]},
+        "team1": {"id": team1_id, "name": names[team1_id], "lineup": [players.get(pid) for pid in pred["lineup_team1"]]},
+        "team2": {"id": team2_id, "name": names[team2_id], "lineup": [players.get(pid) for pid in pred["lineup_team2"]]},
         "p_team1_by_format": pred["p_team1"],
         "features": pred["features"],
     }
@@ -64,49 +65,80 @@ def predict(team1_id: int, team2_id: int) -> dict:
 @app.get("/upcoming")
 def upcoming(hours: int = Query(72, ge=1, le=24 * 14)) -> dict:
     _require_ready()
+    with connect() as conn:
+        matches = _upcoming(conn, hours)
+    return {"model_version": predictor.model.version, "matches": matches}
+
+
+@app.post("/paper-trade")
+def paper_trade() -> dict:
+    """Decides every match whose betting time has passed, including ones missed while nothing was running."""
+    _require_ready()
+    with connect() as conn:
+        placed = paper.place(conn, _predict(conn, _events(
+            conn,
+            """e.start_time - %s <= now()
+               AND NOT EXISTS (SELECT 1 FROM core.bets b WHERE b.odds_event_id = e.id AND b.mode = 'paper')""",
+            (paper.LEAD,),
+        )))
+    return {"placed": placed}
+
+
+def _upcoming(conn, hours: int) -> list[dict]:
+    return _predict(conn, _events(conn, "e.start_time > now() AND e.start_time < now() + make_interval(hours => %s)",
+                                  (hours,)))
+
+
+def _events(conn, where: str, params: tuple) -> list[tuple]:
+    return conn.execute(
+        f"""
+        SELECT e.id, e.tournament, e.start_time, e.home_team_id, e.away_team_id, h.name, a.name,
+               coalesce(bool_or(s.market = ANY(%s)), false)
+        FROM core.odds_events e
+        JOIN core.teams h ON h.id = e.home_team_id
+        JOIN core.teams a ON a.id = e.away_team_id
+        LEFT JOIN core.odds_snapshots s ON s.odds_event_id = e.id
+        WHERE {where}
+        GROUP BY e.id, h.name, a.name
+        ORDER BY e.start_time
+        """,
+        (list(MULTI_MAP_MARKETS), *params),
+    ).fetchall()
+
+
+def _predict(conn, events: list[tuple]) -> list[dict]:
     version = predictor.model.version
     out = []
-    with connect() as conn:
-        events = conn.execute(
+    for event_id, tournament, start, team1, team2, name1, name2, multi_map in events:
+        pred = predictor.predict(team1, team2, start)
+        best_of = 3 if multi_map else 1
+        p = pred["p_team1"][best_of]
+        # The first prediction per match and model version is the one bets are judged against.
+        (prediction_id,) = conn.execute(
             """
-            SELECT e.id, e.tournament, e.start_time, e.home_team_id, e.away_team_id, h.name, a.name,
-                   coalesce(bool_or(s.market = ANY(%s)), false)
-            FROM core.odds_events e
-            JOIN core.teams h ON h.id = e.home_team_id
-            JOIN core.teams a ON a.id = e.away_team_id
-            LEFT JOIN core.odds_snapshots s ON s.odds_event_id = e.id
-            WHERE e.start_time > now() AND e.start_time < now() + make_interval(hours => %s)
-            GROUP BY e.id, h.name, a.name
-            ORDER BY e.start_time
+            INSERT INTO core.predictions
+                (odds_event_id, team1_id, team2_id, best_of, p_team1, model_name, model_version, features)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (odds_event_id, model_name, model_version) DO UPDATE SET model_name = EXCLUDED.model_name
+            RETURNING id
             """,
-            (list(MULTI_MAP_MARKETS), hours),
-        ).fetchall()
-
-        for event_id, tournament, start, team1, team2, name1, name2, multi_map in events:
-            pred = predictor.predict(team1, team2, start)
-            best_of = 3 if multi_map else 1
-            p = pred["p_team1"][best_of]
-            conn.execute(
-                """
-                INSERT INTO core.predictions
-                    (odds_event_id, team1_id, team2_id, best_of, p_team1, model_name, model_version, features)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (odds_event_id, model_name, model_version) DO NOTHING
-                """,
-                (event_id, team1, team2, best_of, p, MODEL_NAME, version, Jsonb(pred["features"])),
-            )
-            players = _names(conn, "core.players", "handle", pred["lineup_team1"] + pred["lineup_team2"])
-            out.append({
-                "odds_event_id": event_id,
-                "tournament": tournament,
-                "start_time": start,
-                "team1": {"id": team1, "name": name1, "lineup": [players.get(p) for p in pred["lineup_team1"]]},
-                "team2": {"id": team2, "name": name2, "lineup": [players.get(p) for p in pred["lineup_team2"]]},
-                "best_of": best_of,
-                "p_team1": p,
-                "p_team1_by_format": pred["p_team1"],
-            })
-    return {"model_version": version, "matches": out}
+            (event_id, team1, team2, best_of, p, MODEL_NAME, version, Jsonb(pred["features"])),
+        ).fetchone()
+        players = _names(conn, "core.players", "handle", pred["lineup_team1"] + pred["lineup_team2"])
+        out.append({
+            "odds_event_id": event_id,
+            "prediction_id": prediction_id,
+            "tournament": tournament,
+            "start_time": start,
+            "team1": {"id": team1, "name": name1, "lineup": [players.get(pid) for pid in pred["lineup_team1"]]},
+            "team2": {"id": team2, "name": name2, "lineup": [players.get(pid) for pid in pred["lineup_team2"]]},
+            "best_of": best_of,
+            "p_team1": p,
+            "p_team1_by_format": pred["p_team1"],
+            # The model is weakest across regions, where its ratings rarely meet.
+            "cross_league": bool(pred["features"].get("cross_league")),
+        })
+    return out
 
 
 def _require_ready() -> None:

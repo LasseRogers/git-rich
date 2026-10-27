@@ -67,6 +67,7 @@ services:
     environment:
       <<: *app-env
       TEAM_ALIASES: /aliases.csv
+      API_URL: http://api:8000
     volumes:
       - ./data/odds:/odds:ro
       - ./gitrich/odds/team_aliases.csv:/aliases.csv:ro
@@ -101,6 +102,20 @@ services:
       interval: 10s
       timeout: 5s
       retries: 6
+
+  panel:
+    <<: *app
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      <<: *app-env
+      API_URL: http://api:8000
+      STREAMLIT_BROWSER_GATHER_USAGE_STATS: "false"
+    command: streamlit run /app/gitrich/panel/app.py --server.address 0.0.0.0 --server.port 8501 --client.toolbarMode viewer
+    ports:
+      - "127.0.0.1:${PANEL_PORT:-8501}:8501"
 
   mlflow:
     build: ./services/mlflow

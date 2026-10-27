@@ -15,6 +15,7 @@ The Postgres user is taken from `$USER`. The password is embedded in connection 
 
 | Service  | Address               |
 |----------|-----------------------|
+| Panel    | http://localhost:8501 |
 | MLflow   | http://localhost:5050 |
 | API      | http://localhost:8000 |
 | Postgres | localhost:5432        |
@@ -40,7 +41,7 @@ Series aren't part of the source data. They're reconstructed from consecutive ga
 
 ## Odds
 
-Odds come from [OddsPapi](https://oddspapi.io). The `collect-odds` workflow snapshots LoL odds three times a day and commits them to the `odds-data` branch, so collection doesn't depend on a local machine being on. GitHub's built-in schedule skipped and delayed runs, so the workflow is started through the API by an external scheduler instead.
+Odds come from [OddsPapi](https://oddspapi.io). The `collect-odds` workflow snapshots LoL odds three times a day and commits them to the `odds-data` branch, so collection doesn't depend on a local machine being on. GitHub's built-in schedule skipped and delayed runs, so the workflow is started through the API by [cron-job.org](https://cron-job.org) instead.
 
 The free tier allows roughly 250 requests a month, so the workflow is budgeted around it: one request per bookmaker per run, and reference data refreshed at most daily. Requests are counted in `usage/` on the data branch and the collector stops at 220.
 
@@ -135,10 +136,31 @@ Each test season is predicted by a model trained on all earlier seasons except t
 | `GET /health` | model version and how many games the feature state covers |
 | `GET /upcoming?hours=72` | predictions for upcoming matches with mapped teams |
 | `GET /predict?team1_id=&team2_id=` | any pairing, for each series format |
+| `POST /paper-trade` | place paper bets on every match due a decision |
 | `POST /reload` | reload the champion and replay all games |
 
 Interactive docs are at `/docs`.
 
 Lineups aren't known before a match, so each team's most recent lineup is assumed. The format comes from the markets offered: a match with map 3 or map handicap markets is treated as a Bo3, otherwise a Bo1. Bo5s look identical to Bo3s in the odds, so `p_team1_by_format` returns all three.
 
-`/upcoming` stores the first prediction per match and model version in `core.predictions`, which is the record paper trading is evaluated on.
+`/upcoming` and `/paper-trade` store the first prediction per match and model version in `core.predictions`, which is the record paper trading is evaluated on.
+
+## Paper trading
+
+Every `ingest-odds` run settles finished bets and then has the API place paper bets through `POST /paper-trade`, so the record builds up without anyone picking bets by hand.
+
+Each match is decided as of 12 hours before its start, at the prices collected in the 12 hours before that, however late the run actually happens. Odds keep being collected while nothing runs locally, so a run after a few days away catches up on every match it missed. A match is skipped once either team has a result in the database after the decision time, since the prediction would see it; load odds before match data.
+
+A match gets at most one bet, when:
+
+- Pinnacle has a price, both as a sanity check and to measure closing line value against
+- the teams are from the same region, since the model overrates weaker regions in international games
+- the edge over the best available price is between 3% and 15%; larger edges are almost always model errors
+
+Stakes are a quarter Kelly on a 1000 kr bankroll, capped at 2%. The rules live in `gitrich/betting/strategy.py`.
+
+CLV is the price taken against Pinnacle's last margin-free price before the start, whichever bookmaker the bet was placed with. A few hundred bets are needed before profit says much; consistently positive CLV shows up long before that.
+
+## Panel
+
+http://localhost:8501 shows the bets to place on upcoming matches, and how the paper bets would have done with any amount per bet.
