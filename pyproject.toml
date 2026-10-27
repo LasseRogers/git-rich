@@ -12,6 +12,7 @@ dependencies = [
 
 [project.scripts]
 ingest-lol = "gitrich.lol.ingest:main"
+ingest-odds = "gitrich.odds.ingest:main"
 
 [build-system]
 requires = ["setuptools>=70"]

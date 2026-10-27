@@ -48,3 +48,13 @@ Setup:
   ```bash
   git push origin "$(git commit-tree "$(git mktree </dev/null)" -m "Start odds data"):refs/heads/odds-data"
   ```
+
+Loading into Postgres, with the data branch checked out as a worktree under `data/odds`:
+
+```bash
+git worktree add data/odds odds-data    # once
+git -C data/odds pull
+docker compose run --rm ingest-odds
+```
+
+Prices are stored per capture, so the series of snapshots gives the line movement. A price captured after a match's `start_time` is in-play, regardless of the source's status field.

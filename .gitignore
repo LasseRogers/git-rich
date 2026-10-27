@@ -4,7 +4,9 @@ __pycache__/
 .venv/
 .pytest_cache/
 .ipynb_checkpoints/
-data/raw/
+data/
 mlruns/
 .DS_Store
 .idea/
+build/
+*.egg-info/
