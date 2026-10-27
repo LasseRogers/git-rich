@@ -47,7 +47,7 @@ class EloState:
             home = self.league_mean.get(self.last_league[entity], p.initial)
             shrink = 1 - (1 - p.season_regression) ** (year - self.last_year[entity])
             self.rating[entity] += shrink * (home - self.rating[entity])
-        self.last_year[entity] = year
+        self.last_year[entity] = max(year, self.last_year.get(entity, year))
         self.last_league[entity] = league
         return self.rating[entity]
 
