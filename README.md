@@ -124,9 +124,9 @@ Gradient boosting on walk-forward pre-series features, grouped so groups can be 
 | `roster` | player experience, players new since the team's previous game |
 | `form` | recent win rate, rating momentum, gold difference at 15 minutes |
 | `schedule` | rest days, games in the last week |
-| `format` | best-of, playoffs |
+| `format` | best-of |
 
-Each test season is predicted by a model trained on all earlier seasons except the last, which is used for early stopping. Every series is seen from both sides during training and prediction, so team order carries no information. The run logs the Elo log loss on the same series for comparison, and its `series_predictions.parquet` works with `backtest --model lgbm`.
+Each test season is predicted by a model trained on all earlier seasons except the last, which is used for early stopping. Features are built exactly as the API builds them before a match, from each team's previous lineup, so test scores reflect live predictions. Every series is seen from both sides during training and prediction, so team order carries no information. The run logs the Elo log loss on the same series for comparison, and its `series_predictions.parquet` works with `backtest --model lgbm`.
 
 ### Logistic regression
 
@@ -136,7 +136,7 @@ docker compose run --rm train-logreg
 
 The LightGBM features in an L2-regularised logistic regression, with the same walk-forward seasons and training window, to measure what the trees add over a linear model. Standardised coefficients are logged per test season. The model isn't registered, so it never becomes the champion.
 
-Features that describe the match rather than a team (`best_of`, `playoffs`, `cross_league`) don't change sign when the teams are swapped, so a symmetric linear model gives them no weight. They can only matter through interactions with the difference features.
+Features that describe the match rather than a team (`best_of`, `cross_league`) don't change sign when the teams are swapped, so a symmetric linear model gives them no weight. They can only matter through interactions with the difference features.
 
 ## Prediction API
 
@@ -152,7 +152,7 @@ Features that describe the match rather than a team (`best_of`, `playoffs`, `cro
 
 Interactive docs are at `/docs`.
 
-Lineups aren't known before a match, so each team's most recent lineup is assumed. The format comes from the markets offered: a match with map 3 or map handicap markets is treated as a Bo3, otherwise a Bo1. Bo5s look identical to Bo3s in the odds, so `p_team1_by_format` returns all three.
+Lineups aren't known before a match, so each team's most recent lineup is assumed, in training as well. The format comes from the markets offered: a match with map 3 or map handicap markets is treated as a Bo3, otherwise a Bo1. Bo5s look identical to Bo3s in the odds, so `p_team1_by_format` returns all three.
 
 `/upcoming` and `/paper-trade` store the first prediction per match and model version in `core.predictions`, which is the record paper trading is evaluated on.
 

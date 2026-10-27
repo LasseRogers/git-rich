@@ -18,7 +18,7 @@ DIFF = [
     "form_diff", "momentum_diff", "gold_diff_15_diff", "rest_days_diff", "games_7d_diff",
 ]
 PAIRED = [("new_players_1", "new_players_2")]
-CONTEXT = ["best_of", "playoffs", "cross_league", "elo_series_logit"]
+CONTEXT = ["best_of", "cross_league", "elo_series_logit"]
 
 GROUPS = {
     "elo": ["elo_player_diff", "elo_team_diff", "elo_series_logit"],
@@ -26,7 +26,7 @@ GROUPS = {
     "roster": ["experience_diff", "new_players_1", "new_players_2"],
     "form": ["form_diff", "momentum_diff", "gold_diff_15_diff"],
     "schedule": ["rest_days_diff", "games_7d_diff"],
-    "format": ["best_of", "playoffs"],
+    "format": ["best_of"],
 }
 
 
@@ -54,7 +54,7 @@ class FeatureState:
         return Counter(leagues).most_common(1)[0][0] if leagues else fallback
 
     def snapshot(self, team1: int, team2: int, players1: list, players2: list,
-                 league: str, year: int, when: datetime, best_of: int, playoffs: bool) -> dict:
+                 league: str, year: int, when: datetime, best_of: int) -> dict:
         h1, h2 = self.history[team1], self.history[team2]
         home1, home2 = self.home(team1, league), self.home(team2, league)
 
@@ -81,15 +81,16 @@ class FeatureState:
             "rest_days_diff": _rest_days(h1, when) - _rest_days(h2, when),
             "games_7d_diff": _games_since(h1, when, 7) - _games_since(h2, when, 7),
             "best_of": float(best_of),
-            "playoffs": float(playoffs),
         }
 
-    def upcoming(self, team1: int, team2: int, when: datetime, best_of: int) -> tuple[dict, list, list]:
-        """Features for a match not yet played. Lineups are unknown, so each team's latest one is assumed."""
+    def upcoming(self, team1: int, team2: int, when: datetime, best_of: int,
+                 league: str = "") -> tuple[dict, list, list]:
+        """Features for a match not yet played. Lineups are unknown, so each team's latest one is assumed.
+        `league` only matters for teams without history."""
         players1 = sorted(self.history[team1].lineup)
         players2 = sorted(self.history[team2].lineup)
-        league = self.home(team1, self.home(team2, ""))
-        row = self.snapshot(team1, team2, players1, players2, league, when.year, when, best_of, playoffs=False)
+        league = self.home(team1, self.home(team2, league))
+        row = self.snapshot(team1, team2, players1, players2, league, when.year, when, best_of)
         return row, players1, players2
 
     def update(self, game) -> None:
@@ -143,10 +144,8 @@ def replay(games: pd.DataFrame, matches: pd.DataFrame | None = None,
         if g.match_id in series.index and g.match_id not in seen:
             seen.add(g.match_id)
             m = series.loc[g.match_id]
-            team1_blue = g.blue_team_id == m.team1_id
-            players1, players2 = (g.blue_players, g.red_players) if team1_blue else (g.red_players, g.blue_players)
-            row = state.snapshot(int(m.team1_id), int(m.team2_id), list(players1), list(players2),
-                                 g.league, g.year, g.played_at, int(m.best_of), bool(g.playoffs))
+            # Built exactly as the API builds them before a match, when the lineups aren't known yet.
+            row, _, _ = state.upcoming(int(m.team1_id), int(m.team2_id), g.played_at, int(m.best_of), g.league)
             row.update(match_id=g.match_id, year=g.year, league=m.league, start_time=m.start_time,
                        team1_id=m.team1_id, team2_id=m.team2_id, team1_won=bool(m.team1_won))
             rows.append(row)
