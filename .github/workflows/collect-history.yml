@@ -1,0 +1,58 @@
+name: collect-history
+
+# Backfills odds history for finished fixtures, one request per fixture from the same monthly budget as collect-odds.
+# Safe to run repeatedly: fixtures already fetched are skipped.
+on:
+  workflow_dispatch:
+    inputs:
+      tournaments:
+        description: Space-separated OddsPapi tournament IDs
+        default: "2454 45337 15490 39985 2452 2450 26698 45589"
+      max:
+        description: Most fixtures to fetch in this run
+        default: "100"
+
+permissions:
+  contents: write
+
+# Shared with collect-odds, so the two never write the request counter at the same time.
+concurrency:
+  group: collect-odds
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: src
+
+      - uses: actions/checkout@v5
+        with:
+          ref: odds-data
+          path: data
+
+      - name: Backfill
+        working-directory: src
+        env:
+          ODDSPAPI_KEY: ${{ secrets.ODDSPAPI_KEY }}
+          TOURNAMENTS: ${{ inputs.tournaments }}
+          MAX: ${{ inputs.max }}
+        run: |
+          args=()
+          for t in $TOURNAMENTS; do args+=(--tournament "$t"); done
+          python3 -m gitrich.odds.history --out ../data --max "$MAX" "${args[@]}"
+
+      # Runs on failure too, so the request counter is never lost.
+      - name: Commit
+        if: always()
+        working-directory: data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m "Odds history $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push
