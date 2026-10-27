@@ -87,3 +87,23 @@ docker compose run --rm backtest --bookmaker bet365 --threshold 0.05
 Bets one unit on the side with the larger expected value when it exceeds the threshold, at the first (`--entry opening`) or last (`--entry closing`) pre-match price collected. Reports ROI, hit rate and closing line value against Pinnacle's margin-free closing price, plus the model's log loss next to the market's on the same matches. Results are logged to the `lol-backtest` experiment.
 
 ROI needs hundreds of bets before it means much; CLV and the log loss comparison are the earlier signals.
+
+### LightGBM
+
+```bash
+docker compose run --rm train-lgbm                          # all feature groups
+docker compose run --rm train-lgbm --groups elo,league      # ablation
+```
+
+Gradient boosting on walk-forward pre-series features, grouped so groups can be switched on and off and compared in the `lol-series-lgbm` experiment:
+
+| Group | Features |
+|---|---|
+| `elo` | player and team Elo difference, Elo series probability |
+| `league` | region strength offset learned from cross-league games, cross-league flag |
+| `roster` | player experience, players new since the team's previous game |
+| `form` | recent win rate, rating momentum, gold difference at 15 minutes |
+| `schedule` | rest days, games in the last week |
+| `format` | best-of, playoffs |
+
+Each test season is predicted by a model trained on all earlier seasons except the last, which is used for early stopping. Every series is seen from both sides during training and prediction, so team order carries no information. The run logs the Elo log loss on the same series for comparison, and its `series_predictions.parquet` works with `backtest --experiment lol-series-lgbm`.

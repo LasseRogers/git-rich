@@ -7,6 +7,10 @@ import pandas as pd
 LN10_400 = math.log(10) / 400
 
 
+def sigmoid(x: float) -> float:
+    return 1 / (1 + math.exp(-x))
+
+
 @dataclass(frozen=True)
 class EloParams:
     # "player": a team is the mean of its five players, so ratings survive roster moves and rebrands.
@@ -15,7 +19,7 @@ class EloParams:
     k_provisional: float = 64.0
     provisional_games: int = 10
     # Share of the gap to the league mean closed per calendar year.
-    season_regression: float = 0.25
+    season_regression: float = 0.5
     # Weight of each game in the running league mean that new entities start from.
     league_ema: float = 0.02
     initial: float = 1500.0
@@ -47,11 +51,42 @@ class EloState:
         self.last_league[entity] = league
         return self.rating[entity]
 
-    def update(self, entity, delta: float) -> None:
+    def strength(self, entities, league: str, year: int) -> float:
+        return sum(self.get(e, league, year) for e in entities) / len(entities)
+
+    @property
+    def side_logit(self) -> float:
+        return math.log(self.blue_wins / (self.blue_games - self.blue_wins))
+
+    def play(self, blue, red, league: str, year: int, blue_won: bool) -> tuple[float, float]:
+        """Rate one game and update. Returns the pre-game (p_blue, p_blue_neutral)."""
+        rb, rr = self.strength(blue, league, year), self.strength(red, league, year)
+        diff = (rb - rr) * LN10_400
+        p_blue = sigmoid(diff + self.side_logit)
+
+        mean = self.league_mean.get(league, self.params.initial)
+        self.league_mean[league] = mean + self.params.league_ema * ((rb + rr) / 2 - mean)
+
+        delta = float(blue_won) - p_blue
+        for e in blue:
+            self._update(e, delta)
+        for e in red:
+            self._update(e, -delta)
+        self.blue_wins += float(blue_won)
+        self.blue_games += 1
+        return p_blue, sigmoid(diff)
+
+    def _update(self, entity, delta: float) -> None:
         p = self.params
         k = p.k_provisional if self.games[entity] < p.provisional_games else p.k
         self.rating[entity] += k * delta
         self.games[entity] += 1
+
+
+def entities(game, mode: str) -> tuple[list, list]:
+    if mode == "player":
+        return list(game.blue_players), list(game.red_players)
+    return [game.blue_team_id], [game.red_team_id]
 
 
 def run(games: pd.DataFrame, params: EloParams) -> tuple[pd.DataFrame, EloState]:
@@ -59,33 +94,11 @@ def run(games: pd.DataFrame, params: EloParams) -> tuple[pd.DataFrame, EloState]
     state = EloState(params)
     out = np.full((len(games), 2), np.nan)
 
-    player_mode = params.mode == "player"
     for i, g in enumerate(games.itertuples(index=False)):
-        if player_mode:
-            blue, red = list(g.blue_players), list(g.red_players)
-            if not blue or not red:
-                continue
-        else:
-            blue, red = [g.blue_team_id], [g.red_team_id]
-
-        rb = sum(state.get(e, g.league, g.year) for e in blue) / len(blue)
-        rr = sum(state.get(e, g.league, g.year) for e in red) / len(red)
-
-        diff = (rb - rr) * LN10_400
-        side = math.log(state.blue_wins / (state.blue_games - state.blue_wins))
-        p_blue = 1 / (1 + math.exp(-(diff + side)))
-        out[i] = (p_blue, 1 / (1 + math.exp(-diff)))
-
-        mean = state.league_mean.get(g.league, params.initial)
-        state.league_mean[g.league] = mean + params.league_ema * ((rb + rr) / 2 - mean)
-
-        delta = float(g.blue_won) - p_blue
-        for e in blue:
-            state.update(e, delta)
-        for e in red:
-            state.update(e, -delta)
-        state.blue_wins += float(g.blue_won)
-        state.blue_games += 1
+        blue, red = entities(g, params.mode)
+        if not blue or not red:
+            continue
+        out[i] = state.play(blue, red, g.league, g.year, g.blue_won)
 
     result = games[["game_id", "match_id", "league", "year", "played_at", "blue_team_id", "red_team_id", "blue_won"]].copy()
     result["p_blue"] = out[:, 0]
@@ -93,9 +106,10 @@ def run(games: pd.DataFrame, params: EloParams) -> tuple[pd.DataFrame, EloState]
     return result, state
 
 
-def series_probability(p_game: np.ndarray, best_of: np.ndarray) -> np.ndarray:
+def series_probability(p_game, best_of) -> np.ndarray:
     """Probability of winning a best-of-n series given a per-game win probability."""
-    p = np.asarray(p_game, dtype=float)
+    p = np.atleast_1d(np.asarray(p_game, dtype=float))
+    best_of = np.broadcast_to(np.asarray(best_of), p.shape)
     q = 1 - p
     out = np.empty_like(p)
     for n in np.unique(best_of):

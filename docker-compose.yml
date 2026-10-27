@@ -75,6 +75,10 @@ services:
     <<: *ml-job
     entrypoint: [train-elo]
 
+  train-lgbm:
+    <<: *ml-job
+    entrypoint: [train-lgbm]
+
   backtest:
     <<: *ml-job
     entrypoint: [backtest]

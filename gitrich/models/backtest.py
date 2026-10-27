@@ -78,7 +78,7 @@ def load_predictions(experiment: str, run_id: str | None) -> tuple[str, pd.DataF
     if run_id is None:
         runs = mlflow.search_runs(
             experiment_names=[experiment],
-            filter_string="tags.mlflow.runName = 'grid' AND attributes.status = 'FINISHED'",
+            filter_string="tags.predictions = 'series' AND attributes.status = 'FINISHED'",
             order_by=["attributes.start_time DESC"],
             max_results=1,
         )

@@ -11,12 +11,14 @@ dependencies = [
     "numpy==2.5.4",
     "pyarrow==26.0.0",
     "mlflow-skinny==3.17.2",
+    "lightgbm==4.7.0",
 ]
 
 [project.scripts]
 ingest-lol = "gitrich.lol.ingest:main"
 ingest-odds = "gitrich.odds.ingest:main"
 train-elo = "gitrich.models.train_elo:main"
+train-lgbm = "gitrich.models.train_lgbm:main"
 backtest = "gitrich.models.backtest:main"
 
 [build-system]
