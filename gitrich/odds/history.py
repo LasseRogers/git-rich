@@ -19,7 +19,10 @@ FIXTURE_FIELDS = ("fixtureId", "tournamentId", "tournamentName", "startTime",
 
 
 def finished_fixtures(client: Client, out: Path, tournament_ids: list[int], since: str, now: datetime) -> list[dict]:
-    """Finished fixtures Pinnacle priced. Listings are cached, so a backfill spread over several runs pays once."""
+    """Finished fixtures. Listings are cached, so a backfill spread over several runs pays once.
+
+    hasOdds only reflects current prices, so it can't narrow finished fixtures to the ones Pinnacle priced.
+    """
     fixtures = {}
     for tournament_id in tournament_ids:
         path = out / "history" / "fixtures" / f"{tournament_id}.json"
@@ -27,9 +30,14 @@ def finished_fixtures(client: Client, out: Path, tournament_ids: list[int], sinc
         if cached and now - datetime.fromisoformat(cached["fetchedAt"]) < LISTING_MAX_AGE:
             data = cached["data"]
         else:
-            data = client.get("fixtures", tournamentId=tournament_id, statusId=2, hasOdds="true",
-                              bookmakers="pinnacle", **{"from": since})
+            try:
+                data = client.get("fixtures", tournamentId=tournament_id, statusId=2, **{"from": since})
+            except ApiError as e:
+                if "FIXTURE_NOT_FOUND" not in str(e):
+                    raise
+                data = []
             _write_json(path, {"fetchedAt": now.isoformat(), "data": data})
+        log.info("tournament %s: %d finished fixtures", tournament_id, len(data))
         fixtures.update((f["fixtureId"], f) for f in data)
     return list(fixtures.values())
 
