@@ -40,7 +40,7 @@ Series aren't part of the source data. They're reconstructed from consecutive ga
 
 ## Odds
 
-Odds come from [OddsPapi](https://oddspapi.io). The `collect-odds` workflow snapshots LoL odds three times a day and commits them to the `odds-data` branch, so collection doesn't depend on a local machine being on. It's started through GitHub's API by an external scheduler (cron-job.org) using a fine-grained token limited to Actions on this repository; GitHub's built-in schedule turned out to skip and delay runs.
+Odds come from [OddsPapi](https://oddspapi.io). The `collect-odds` workflow snapshots LoL odds three times a day and commits them to the `odds-data` branch, so collection doesn't depend on a local machine being on. GitHub's built-in schedule skipped and delayed runs, so the workflow is started through the API by an external scheduler instead.
 
 The free tier allows roughly 250 requests a month, so the workflow is budgeted around it: one request per bookmaker per run, and reference data refreshed at most daily. Requests are counted in `usage/` on the data branch and the collector stops at 220.
 
@@ -51,6 +51,23 @@ Setup:
   ```bash
   git push origin "$(git commit-tree "$(git mktree </dev/null)" -m "Start odds data"):refs/heads/odds-data"
   ```
+- Create a fine-grained token with access to this repository only and **Actions: Read and write**.
+- Schedule two jobs on [cron-job.org](https://cron-job.org) (or any scheduler), in UTC:
+
+  | Schedule | Body |
+  |---|---|
+  | `23 7,15 * * *` | `{"ref":"main","inputs":{"bookmakers":"pinnacle bet365"}}` |
+  | `23 21 * * *` | `{"ref":"main","inputs":{"bookmakers":"pinnacle"}}` |
+
+  Both `POST` to `https://api.github.com/repos/LasseRogers/git-rich/actions/workflows/collect-odds.yml/dispatches` with the headers `Authorization: Bearer <token>`, `Accept: application/vnd.github+json`, `X-GitHub-Api-Version: 2022-11-28` and `Content-Type: application/json`. A successful trigger returns `204`.
+
+When the token expires (GitHub emails a reminder), replace it in both jobs. GitHub announces the end of an API version through the `Deprecation` and `Sunset` headers on the response, visible in the scheduler's job history; bump `X-GitHub-Api-Version` before then.
+
+To trigger a run manually:
+
+```bash
+gh workflow run collect-odds.yml -f bookmakers="pinnacle bet365"
+```
 
 Loading into Postgres, with the data branch checked out as a worktree under `data/odds`:
 
