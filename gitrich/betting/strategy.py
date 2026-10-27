@@ -4,9 +4,7 @@ from gitrich.betting import staking
 from gitrich.odds.prices import fair_probability
 
 SHARP = "pinnacle"
-BANKROLL = 1000.0
-KELLY = 0.25
-MAX_STAKE = 0.02
+STAKE = 20.0
 MIN_EDGE = 0.03
 # Edges this large against the market are almost always model errors.
 MAX_EDGE = 0.15
@@ -40,5 +38,5 @@ def choose(p_team1: float, quotes: dict[tuple[str, str], float], cross_league: b
         if MIN_EDGE <= edge <= MAX_EDGE and (best is None or edge > best.edge):
             best = Bet(bookmaker, selection, price, p,
                        market_team1 if selection == "team1" else 1 - market_team1,
-                       edge, staking.stake(p, price, BANKROLL, KELLY, MAX_STAKE))
-    return best if best and best.stake > 0 else None
+                       edge, STAKE)
+    return best

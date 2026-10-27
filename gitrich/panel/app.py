@@ -2,7 +2,6 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from gitrich.betting.strategy import BANKROLL
 from gitrich.panel import data
 
 st.set_page_config(page_title="git-rich", layout="centered")
@@ -40,7 +39,7 @@ with upcoming_tab:
                 c[2].metric("Edge", f"{b.p_model * b.price - 1:+.0%}",
                             help="Expected profit per kr staked, if the model is right.")
                 stake = st.slider("Stake (kr)", 10, 1000, max(10, round(b.stake / 10) * 10), 10, key=f"stake-{b.id}",
-                                  help=f"The paper bet uses {b.stake:.0f} kr, sized for a {BANKROLL:,.0f} kr bankroll.")
+                                  help=f"The paper bet uses {b.stake:.0f} kr.")
                 st.markdown(f"Possible payout: **{stake * b.price:,.0f} kr**")
 
 with paper_tab:

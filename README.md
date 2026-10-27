@@ -41,7 +41,7 @@ Series aren't part of the source data. They're reconstructed from consecutive ga
 
 ## Odds
 
-Odds come from [OddsPapi](https://oddspapi.io). The `collect-odds` workflow snapshots LoL odds three times a day and commits them to the `odds-data` branch, so collection doesn't depend on a local machine being on. GitHub's built-in schedule skipped and delayed runs, so the workflow is started through the API by [cron-job.org](https://cron-job.org) instead.
+Odds come from [OddsPapi](https://oddspapi.io). The `collect-odds` workflow snapshots LoL odds three times a day and commits them to the `odds-data` branch, so collection doesn't depend on a local machine being on. GitHub's built-in schedule skipped and delayed runs, so the workflow is started through an external scheduler instead.
 
 The free tier allows roughly 250 requests a month, so the workflow is budgeted around it: one request per bookmaker per run, and reference data refreshed at most daily. Requests are counted in `usage/` on the data branch and the collector stops at 220.
 
@@ -60,7 +60,7 @@ Setup:
   | `23 7,15 * * *` | `{"ref":"main","inputs":{"bookmakers":"pinnacle bet365"}}` |
   | `23 21 * * *` | `{"ref":"main","inputs":{"bookmakers":"pinnacle"}}` |
 
-  Both `POST` to `https://api.github.com/repos/LasseRogers/git-rich/actions/workflows/collect-odds.yml/dispatches` with the headers `Authorization: Bearer <token>`, `Accept: application/vnd.github+json`, `X-GitHub-Api-Version: 2022-11-28` and `Content-Type: application/json`. A successful trigger returns `204`.
+  Both `POST` to `https://api.github.com/repos/<owner>/<repo>/actions/workflows/collect-odds.yml/dispatches` with the headers `Authorization: Bearer <token>`, `Accept: application/vnd.github+json`, `X-GitHub-Api-Version: 2022-11-28` and `Content-Type: application/json`. A successful trigger returns `204`.
 
 When the token expires (GitHub emails a reminder), replace it in both jobs. GitHub announces the end of an API version through the `Deprecation` and `Sunset` headers on the response, visible in the scheduler's job history; bump `X-GitHub-Api-Version` before then.
 
@@ -158,19 +158,19 @@ Lineups aren't known before a match, so each team's most recent lineup is assume
 
 ## Paper trading
 
-Every `ingest-odds` run settles finished bets and then has the API place paper bets through `POST /paper-trade`, so the record builds up without anyone picking bets by hand.
+`ingest-odds` settles finished bets, then places new ones through `POST /paper-trade`.
 
-Each match is decided as of 12 hours before its start, at the prices collected in the 12 hours before that, however late the run actually happens. Odds keep being collected while nothing runs locally, so a run after a few days away catches up on every match it missed. A match is skipped once either team has a result in the database after the decision time, since the prediction would see it; load odds before match data.
+Each match is decided as of 12 hours before its start, at prices captured in the 12 hours before that, so a late run catches up on missed matches without seeing the future. A match is skipped if either team has played since its decision time, so load odds before match data.
 
-A match gets at most one bet, when:
+A match gets at most one bet, at the best available price, when:
 
-- Pinnacle has a price, both as a sanity check and to measure closing line value against
-- the teams are from the same region, since the model overrates weaker regions in international games
-- the edge over the best available price is between 3% and 15%; larger edges are almost always model errors
+- Pinnacle has a price, which closing line value is measured against
+- both teams are from the same region; the model overrates weaker regions in international games
+- the edge is between 3% and 15%; larger edges are almost always model errors
 
-Stakes are a quarter Kelly on a 1000 kr bankroll, capped at 2%. The rules live in `gitrich/betting/strategy.py`.
+Every bet is a flat `STAKE` of 20 kr. The rules are in `gitrich/betting/strategy.py`.
 
-CLV is the price taken against Pinnacle's last margin-free price before the start, whichever bookmaker the bet was placed with. A few hundred bets are needed before profit says much; consistently positive CLV shows up long before that.
+CLV compares the price taken with Pinnacle's margin-free closing price, whichever bookmaker took the bet. It becomes meaningful long before profit does.
 
 ## Panel
 
