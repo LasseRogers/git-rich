@@ -35,7 +35,7 @@ def finished_fixtures(client: Client, out: Path, tournament_ids: list[int], sinc
             try:
                 data = client.get("fixtures", tournamentId=tournament_id, statusId=2, **{"from": since})
             except ApiError as e:
-                if "FIXTURE_NOT_FOUND" not in str(e):
+                if not _not_found(e):
                     raise
                 data = []
             _write_json(path, {"fetchedAt": now.isoformat(), "data": data})
@@ -77,12 +77,22 @@ def backfill(client: Client, out: Path, tournament_ids: list[int], bookmakers: s
 
     for fixture in todo[:limit]:
         time.sleep(HISTORY_COOLDOWN)
-        history = client.get("historical-odds", fixtureId=fixture["fixtureId"], bookmakers=bookmakers)
+        try:
+            history = client.get("historical-odds", fixtureId=fixture["fixtureId"], bookmakers=bookmakers)
+        except ApiError as e:
+            if not _not_found(e):
+                raise
+            history = {}
         # Written even when empty: the request is spent either way.
         _write_json(done / f"{fixture['fixtureId']}.json",
                     {"fixture": {k: fixture.get(k) for k in FIXTURE_FIELDS}, "bookmakers": trim(history)})
         log.info("%s %s vs %s", fixture["startTime"][:10],
                  fixture.get("participant1Name"), fixture.get("participant2Name"))
+
+
+def _not_found(e: ApiError) -> bool:
+    """OddsPapi answers an empty result with a 404."""
+    return "HTTP 404" in str(e)
 
 
 def main() -> None:
