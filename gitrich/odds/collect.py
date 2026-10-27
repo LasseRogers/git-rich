@@ -21,6 +21,8 @@ MARKETS = {"181", "183", "1825", "1837", "1847", "1849", "1851"}
 OUTCOME_FIELDS = ("price", "active", "changedAt", "limit", "mainLine")
 
 REFERENCE_MAX_AGE = timedelta(hours=20)
+COOLDOWN = 1.5
+MAX_ATTEMPTS = 3
 
 
 class BudgetExhausted(Exception):
@@ -29,6 +31,19 @@ class BudgetExhausted(Exception):
 
 class ApiError(Exception):
     pass
+
+
+class RateLimited(Exception):
+    def __init__(self, retry_after: float):
+        super().__init__(f"retry after {retry_after:.2f}s")
+        self.retry_after = retry_after
+
+
+def _retry_after(body: bytes) -> float:
+    try:
+        return json.loads(body)["error"]["retryMs"] / 1000
+    except (ValueError, KeyError, TypeError):
+        return COOLDOWN
 
 
 class Client:
@@ -40,21 +55,34 @@ class Client:
         self._last_call = 0.0
 
     def get(self, path: str, **params):
+        for attempt in range(MAX_ATTEMPTS):
+            try:
+                return self._request(path, params)
+            except RateLimited as e:
+                if attempt == MAX_ATTEMPTS - 1:
+                    raise ApiError(f"{path}: still rate limited after {MAX_ATTEMPTS} attempts") from e
+                time.sleep(e.retry_after + 0.25)
+
+    def _request(self, path: str, params: dict):
         if self.usage["requests"] >= self.budget:
             raise BudgetExhausted(f"{self.usage['requests']}/{self.budget} requests used this month")
 
-        # Documented cooldown is 1s per endpoint.
-        time.sleep(max(0.0, 1.1 - (time.monotonic() - self._last_call)))
+        # The cooldown is counted from when the previous response finished, not when it was sent.
+        time.sleep(max(0.0, COOLDOWN - (time.monotonic() - self._last_call)))
         url = f"{API}/{path}?{urllib.parse.urlencode({**params, 'apiKey': self.key})}"
         self.usage["requests"] += 1
         _write_json(self.usage_path, self.usage)
-        self._last_call = time.monotonic()
 
         try:
             with urllib.request.urlopen(url, timeout=60) as resp:
                 body = json.load(resp)
         except urllib.error.HTTPError as e:
-            raise ApiError(f"{path}: HTTP {e.code} {e.read()[:500]!r}") from e
+            detail = e.read()[:500]
+            if e.code == 429:
+                raise RateLimited(_retry_after(detail)) from e
+            raise ApiError(f"{path}: HTTP {e.code} {detail!r}") from e
+        finally:
+            self._last_call = time.monotonic()
 
         if isinstance(body, dict) and "error" in body:
             raise ApiError(f"{path}: {body['error']}")
