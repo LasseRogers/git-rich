@@ -82,6 +82,18 @@ Prices are stored per capture, so the series of snapshots gives the line movemen
 
 The import also maps OddsPapi teams to ours and links each odds event to its match in `core.matches` once Oracle's Elixir has the result. Teams are matched on normalized names among teams active in the last 400 days. Names that don't match are logged; map them in `gitrich/odds/team_aliases.csv` using the team name as it appears in `core.teams`. Aliases also override an incorrect automatic match.
 
+### Backfilling history
+
+OddsPapi keeps the price history of finished fixtures, currently from January 2026. The `collect-history` workflow fetches it for backtests into `history/` on the data branch, one request per fixture from the same monthly budget as `collect-odds`:
+
+```bash
+gh workflow run collect-history.yml -f max=200
+```
+
+It covers the major domestic leagues by default; pass `-f tournaments="..."` with OddsPapi tournament IDs to change them. Fixtures are fetched in a fixed shuffled order, so a partial backfill is a fair sample of the season, and fixtures already fetched are skipped, so the workflow can be rerun each month until the budget has covered them.
+
+`ingest-odds` loads the winner market from these files, flagged as backfilled. Paper trading only acts on prices it saw live, so the backfill never places bets on matches already played.
+
 ## Models
 
 Every model logs to the `lol-series` experiment in MLflow, tagged `model=elo`, `lgbm` or `logreg`, so runs can be compared side by side on test log loss.
