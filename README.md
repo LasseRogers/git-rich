@@ -40,7 +40,7 @@ Series aren't part of the source data. They're reconstructed from consecutive ga
 
 ## Odds
 
-Odds come from [OddsPapi](https://oddspapi.io). The `collect-odds` workflow snapshots LoL odds three times a day and commits them to the `odds-data` branch, so collection doesn't depend on a local machine being on.
+Odds come from [OddsPapi](https://oddspapi.io). The `collect-odds` workflow snapshots LoL odds three times a day and commits them to the `odds-data` branch, so collection doesn't depend on a local machine being on. It's started through GitHub's API by an external scheduler (cron-job.org) using a fine-grained token limited to Actions on this repository; GitHub's built-in schedule turned out to skip and delay runs.
 
 The free tier allows roughly 250 requests a month, so the workflow is budgeted around it: one request per bookmaker per run, and reference data refreshed at most daily. Requests are counted in `usage/` on the data branch and the collector stops at 220.
 

@@ -1,11 +1,8 @@
 name: collect-odds
 
+# Triggered through the API by an external scheduler: GitHub's own cron drops and delays runs.
+# 07:23 and 15:23 UTC with pinnacle and bet365, 21:23 UTC with pinnacle only (~250 free requests a month).
 on:
-  schedule:
-    # Before the Asian, European and late slates. The free tier allows ~250 requests a month.
-    - cron: "23 7 * * *"
-    - cron: "23 15 * * *"
-    - cron: "23 21 * * *"
   workflow_dispatch:
     inputs:
       bookmakers:
@@ -37,7 +34,7 @@ jobs:
         working-directory: src
         env:
           ODDSPAPI_KEY: ${{ secrets.ODDSPAPI_KEY }}
-          BOOKMAKERS: ${{ inputs.bookmakers || (github.event.schedule == '23 21 * * *' && 'pinnacle' || 'pinnacle bet365') }}
+          BOOKMAKERS: ${{ inputs.bookmakers }}
         run: |
           args=()
           for b in $BOOKMAKERS; do args+=(--bookmaker "$b"); done
