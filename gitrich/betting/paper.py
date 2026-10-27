@@ -15,7 +15,8 @@ def quotes_at(conn: psycopg.Connection, event_id: int, at) -> dict[tuple[str, st
         """
         SELECT DISTINCT ON (bookmaker, selection) bookmaker, selection, price
         FROM core.odds_snapshots
-        WHERE odds_event_id = %s AND market = 'winner' AND active AND captured_at BETWEEN %s AND %s
+        WHERE odds_event_id = %s AND market = 'winner' AND active AND NOT backfilled
+          AND captured_at BETWEEN %s AND %s
         ORDER BY bookmaker, selection, captured_at DESC
         """,
         (event_id, at - MAX_PRICE_AGE, at),

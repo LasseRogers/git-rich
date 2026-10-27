@@ -78,7 +78,9 @@ def paper_trade() -> dict:
         placed = paper.place(conn, _predict(conn, _events(
             conn,
             """e.start_time - %s <= now()
-               AND NOT EXISTS (SELECT 1 FROM core.bets b WHERE b.odds_event_id = e.id AND b.mode = 'paper')""",
+               AND NOT EXISTS (SELECT 1 FROM core.bets b WHERE b.odds_event_id = e.id AND b.mode = 'paper')
+               -- Matches only seen in backfilled history were never live, so there was nothing to trade.
+               AND EXISTS (SELECT 1 FROM core.odds_snapshots l WHERE l.odds_event_id = e.id AND NOT l.backfilled)""",
             (paper.LEAD,),
         )))
     return {"placed": placed}

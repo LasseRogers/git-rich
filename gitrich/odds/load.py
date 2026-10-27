@@ -21,6 +21,7 @@ MARKETS = {
     "1849": ("map2_winner", {"1849": "team1", "1850": "team2"}),
     "1851": ("map3_winner", {"1851": "team1", "1852": "team2"}),
 }
+WINNER = "181"
 
 
 @dataclass
@@ -63,6 +64,44 @@ def load_dir(conn: psycopg.Connection, root: Path) -> LoadStats:
                 prices += max(cur.rowcount, 0)
 
     return LoadStats(files=len(files), events=len(events), prices=prices)
+
+
+def load_history(conn: psycopg.Connection, root: Path) -> LoadStats:
+    """Backfilled price timelines, one file per fixture. Only the winner market, which is what backtests price."""
+    market, selections = MARKETS[WINNER]
+    files = sorted((root / "history" / "odds").glob("*.json"))
+    events = prices = 0
+
+    with conn.cursor() as cur:
+        for path in files:
+            history = json.loads(path.read_text())
+            timelines = [
+                (bookmaker, selections[outcome_id], entry)
+                for bookmaker, markets in history["bookmakers"].items()
+                for outcome_id, timeline in markets.get(WINNER, {}).items() if outcome_id in selections
+                for entry in timeline if entry["price"] > 1
+            ]
+            if not timelines:
+                continue
+
+            fixture = history["fixture"]
+            participants = {str(fixture[f"participant{i}Id"]): fixture[f"participant{i}Name"] for i in (1, 2)}
+            event_id = _upsert_event(cur, fixture, participants,
+                                     {str(fixture["tournamentId"]): fixture["tournamentName"]})
+            cur.executemany(
+                """
+                INSERT INTO core.odds_snapshots (odds_event_id, bookmaker, market, selection, price,
+                                                 captured_at, changed_at, active, backfilled)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, true)
+                ON CONFLICT (odds_event_id, bookmaker, market, selection, captured_at) DO NOTHING
+                """,
+                [(event_id, bookmaker, market, selection, e["price"], e["at"], e["at"], bool(e["active"]))
+                 for bookmaker, selection, e in timelines],
+            )
+            events += 1
+            prices += max(cur.rowcount, 0)
+
+    return LoadStats(files=len(files), events=events, prices=prices)
 
 
 def _upsert_event(cur: psycopg.Cursor, fixture: dict, participants: dict, tournaments: dict) -> int:

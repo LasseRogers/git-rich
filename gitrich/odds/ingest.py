@@ -9,7 +9,7 @@ from pathlib import Path
 from gitrich.betting.settle import settle
 from gitrich.db import connect
 from gitrich.odds.link import link
-from gitrich.odds.load import load_dir
+from gitrich.odds.load import load_dir, load_history
 
 
 def paper_trade(api_url: str) -> int | None:
@@ -32,10 +32,12 @@ def main() -> None:
 
     with connect() as conn:
         loaded = load_dir(conn, args.root)
+        backfilled = load_history(conn, args.root)
         linked = link(conn)
         settled = settle(conn)
 
     logging.info("%d files, %d events, %d prices", loaded.files, loaded.events, loaded.prices)
+    logging.info("history: %d files, %d events, %d prices", backfilled.files, backfilled.events, backfilled.prices)
     logging.info("%d teams mapped, %d events linked to matches, %d bets settled",
                  linked.teams, linked.matches, settled)
     if linked.unmapped:
