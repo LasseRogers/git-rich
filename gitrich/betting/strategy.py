@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 
-from gitrich.betting import staking
 from gitrich.odds.prices import fair_probability
 
 SHARP = "pinnacle"
@@ -34,7 +33,7 @@ def choose(p_team1: float, quotes: dict[tuple[str, str], float], cross_league: b
     best = None
     for (bookmaker, selection), price in quotes.items():
         p = p_team1 if selection == "team1" else 1 - p_team1
-        edge = staking.expected_value(p, price)
+        edge = p * price - 1
         if MIN_EDGE <= edge <= MAX_EDGE and (best is None or edge > best.edge):
             best = Bet(bookmaker, selection, price, p,
                        market_team1 if selection == "team1" else 1 - market_team1,

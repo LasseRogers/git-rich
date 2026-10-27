@@ -12,18 +12,16 @@ from gitrich.models import elo
 WINDOW = 10
 HOME_WINDOW = 20
 
-# Difference features flip sign when the teams are swapped; paired features swap columns.
+# Difference features flip sign when the teams are swapped.
 DIFF = [
     "elo_player_diff", "elo_team_diff", "league_offset_diff", "experience_diff",
     "form_diff", "momentum_diff", "gold_diff_15_diff", "rest_days_diff", "games_7d_diff",
 ]
-PAIRED = [("new_players_1", "new_players_2")]
-CONTEXT = ["best_of", "cross_league", "elo_series_logit"]
 
 GROUPS = {
     "elo": ["elo_player_diff", "elo_team_diff", "elo_series_logit"],
     "league": ["league_offset_diff", "cross_league"],
-    "roster": ["experience_diff", "new_players_1", "new_players_2"],
+    "roster": ["experience_diff"],
     "form": ["form_diff", "momentum_diff", "gold_diff_15_diff"],
     "schedule": ["rest_days_diff", "games_7d_diff"],
     "format": ["best_of"],
@@ -73,8 +71,6 @@ class FeatureState:
             "league_offset_diff": offset,
             "cross_league": float(home1 != home2),
             "experience_diff": _experience(self.players, players1) - _experience(self.players, players2),
-            "new_players_1": _new_players(h1, players1),
-            "new_players_2": _new_players(h2, players2),
             "form_diff": _mean(h1.results, 0.5) - _mean(h2.results, 0.5),
             "momentum_diff": _momentum(h1) - _momentum(h2),
             "gold_diff_15_diff": _mean(h1.gold_diff_15, np.nan) - _mean(h2.gold_diff_15, np.nan),
@@ -160,9 +156,6 @@ def flip(X: pd.DataFrame) -> pd.DataFrame:
     for c in DIFF + ["elo_series_logit"]:
         if c in out:
             out[c] = -out[c]
-    for a, b in PAIRED:
-        if a in out and b in out:
-            out[a], out[b] = X[b], X[a]
     return out
 
 
@@ -174,12 +167,6 @@ def _experience(state: elo.EloState, players: list) -> float:
     if not players:
         return np.nan
     return float(np.mean([min(state.games.get(p, 0), 300) for p in players]))
-
-
-def _new_players(h: TeamHistory, players: list) -> float:
-    if not h.lineup or not players:
-        return np.nan
-    return float(len(set(players) - h.lineup))
 
 
 def _mean(values, default: float) -> float:

@@ -121,7 +121,7 @@ Gradient boosting on walk-forward pre-series features, grouped so groups can be 
 |---|---|
 | `elo` | player and team Elo difference, Elo series probability |
 | `league` | region strength offset learned from cross-league games, cross-league flag |
-| `roster` | player experience, players new since the team's previous game |
+| `roster` | player experience |
 | `form` | recent win rate, rating momentum, gold difference at 15 minutes |
 | `schedule` | rest days, games in the last week |
 | `format` | best-of |

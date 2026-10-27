@@ -4,7 +4,7 @@ import psycopg
 
 def load_games(conn: psycopg.Connection) -> pd.DataFrame:
     rows = conn.execute("""
-        SELECT g.game_id, g.match_id, g.league, g.year, g.playoffs, g.played_at, g.game_number, g.duration_s,
+        SELECT g.game_id, g.match_id, g.league, g.year, g.played_at, g.game_number, g.duration_s,
                g.blue_team_id, g.red_team_id, g.winner_side = 'blue' AS blue_won,
                b.gold_diff_15 AS blue_gold_diff_15,
                coalesce(array_agg(p.player_id ORDER BY p.position) FILTER (WHERE p.side = 'blue'), '{}') AS blue_players,
@@ -15,7 +15,7 @@ def load_games(conn: psycopg.Connection) -> pd.DataFrame:
         GROUP BY g.game_id, b.gold_diff_15
         ORDER BY g.played_at, g.game_number NULLS FIRST, g.game_id
     """).fetchall()
-    columns = ["game_id", "match_id", "league", "year", "playoffs", "played_at", "game_number", "duration_s",
+    columns = ["game_id", "match_id", "league", "year", "played_at", "game_number", "duration_s",
                "blue_team_id", "red_team_id", "blue_won", "blue_gold_diff_15", "blue_players", "red_players"]
     return pd.DataFrame(rows, columns=columns)
 
