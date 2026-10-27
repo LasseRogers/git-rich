@@ -90,19 +90,32 @@ def entities(game, mode: str) -> tuple[list, list]:
 
 
 def run(games: pd.DataFrame, params: EloParams) -> tuple[pd.DataFrame, EloState]:
-    """Walk-forward ratings: every probability uses only games before it."""
+    """Walk-forward ratings: every probability uses only games before it.
+
+    `p_blue_prior` rates each side by its previous lineup, since a prediction made before a series can't know who plays.
+    """
     state = EloState(params)
+    lineups: dict = {}
     out = np.full((len(games), 2), np.nan)
 
     for i, g in enumerate(games.itertuples(index=False)):
         blue, red = entities(g, params.mode)
         if not blue or not red:
             continue
-        out[i] = state.play(blue, red, g.league, g.year, g.blue_won)
+        if params.mode == "player":
+            prev_blue, prev_red = lineups.get(g.blue_team_id), lineups.get(g.red_team_id)
+        else:
+            prev_blue, prev_red = blue, red
+        prior = 0.5
+        if prev_blue and prev_red:
+            diff = state.strength(prev_blue, g.league, g.year) - state.strength(prev_red, g.league, g.year)
+            prior = sigmoid(diff * LN10_400)
+        out[i] = state.play(blue, red, g.league, g.year, g.blue_won)[0], prior
+        lineups[g.blue_team_id], lineups[g.red_team_id] = blue, red
 
     result = games[["game_id", "match_id", "league", "year", "played_at", "blue_team_id", "red_team_id", "blue_won"]].copy()
     result["p_blue"] = out[:, 0]
-    result["p_blue_neutral"] = out[:, 1]
+    result["p_blue_prior"] = out[:, 1]
     return result, state
 
 
@@ -123,14 +136,14 @@ def series_probability(p_game, best_of) -> np.ndarray:
 
 
 def series_predictions(game_preds: pd.DataFrame, matches: pd.DataFrame) -> pd.DataFrame:
-    """Pre-series probability for team1, from ratings before the series' first game."""
+    """Pre-series probability for team1, from each team's previous lineup before the series' first game."""
     first = (
-        game_preds.dropna(subset=["match_id", "p_blue_neutral"])
+        game_preds.dropna(subset=["match_id", "p_blue_prior"])
         .sort_values("played_at")
         .drop_duplicates("match_id")
-        [["match_id", "year", "blue_team_id", "p_blue_neutral"]]
+        [["match_id", "year", "blue_team_id", "p_blue_prior"]]
     )
     df = matches.merge(first, on="match_id")
-    p_team1_game = np.where(df["blue_team_id"] == df["team1_id"], df["p_blue_neutral"], 1 - df["p_blue_neutral"])
+    p_team1_game = np.where(df["blue_team_id"] == df["team1_id"], df["p_blue_prior"], 1 - df["p_blue_prior"])
     df["p_team1"] = series_probability(p_team1_game, df["best_of"].to_numpy())
     return df[["match_id", "league", "year", "start_time", "best_of", "team1_id", "team2_id", "team1_won", "p_team1"]]
