@@ -11,7 +11,8 @@ from gitrich.odds.collect import MARKETS, ApiError, BudgetExhausted, Client, _re
 
 log = logging.getLogger("collect-history")
 
-# historical-odds allows one call per five seconds, longer than the client's general cooldown.
+# OddsPapi's per-endpoint cooldowns, longer than the client's general one. A rate-limited retry still costs a request.
+LISTING_COOLDOWN = 2.0
 HISTORY_COOLDOWN = 5.0
 LISTING_MAX_AGE = timedelta(days=7)
 FIXTURE_FIELDS = ("fixtureId", "tournamentId", "tournamentName", "startTime",
@@ -30,6 +31,7 @@ def finished_fixtures(client: Client, out: Path, tournament_ids: list[int], sinc
         if cached and now - datetime.fromisoformat(cached["fetchedAt"]) < LISTING_MAX_AGE:
             data = cached["data"]
         else:
+            time.sleep(LISTING_COOLDOWN)
             try:
                 data = client.get("fixtures", tournamentId=tournament_id, statusId=2, **{"from": since})
             except ApiError as e:
@@ -68,9 +70,9 @@ def backfill(client: Client, out: Path, tournament_ids: list[int], bookmakers: s
              limit: int, now: datetime) -> None:
     fixtures = finished_fixtures(client, out, tournament_ids, since, now)
     done = out / "history" / "odds"
-    # Newest first: those are closest to how the model will be used live.
+    # Oldest first: the regular seasons come before the off-season events at the end of the year.
     todo = sorted((f for f in fixtures if not (done / f"{f['fixtureId']}.json").exists()),
-                  key=lambda f: f["startTime"], reverse=True)
+                  key=lambda f: f["startTime"])
     log.info("%d finished fixtures, %d without history, fetching up to %d", len(fixtures), len(todo), limit)
 
     for fixture in todo[:limit]:
