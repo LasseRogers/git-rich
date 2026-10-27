@@ -6,6 +6,7 @@ x-app-env: &app-env
 x-ml-env: &ml-env
   <<: *app-env
   MLFLOW_TRACKING_URI: http://mlflow:5000
+  MLFLOW_DISABLE_TELEMETRY: "true"
   GIT_PYTHON_REFRESH: quiet
 
 # All Python services run the same image, so one build updates every job.
@@ -83,9 +84,29 @@ services:
     <<: *ml-job
     entrypoint: [backtest]
 
+  api:
+    <<: *app
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      mlflow:
+        condition: service_healthy
+    environment: *ml-env
+    command: uvicorn gitrich.api.app:app --host 0.0.0.0 --port 8000
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
   mlflow:
     build: ./services/mlflow
     restart: unless-stopped
+    environment:
+      MLFLOW_DISABLE_TELEMETRY: "true"
     depends_on:
       postgres:
         condition: service_healthy

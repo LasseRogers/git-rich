@@ -10,7 +10,7 @@ import pandas as pd
 
 from gitrich.db import connect
 from gitrich.lol.data import load_games, load_matches
-from gitrich.models import features, metrics
+from gitrich.models import features, metrics, registry
 
 log = logging.getLogger("train-lgbm")
 
@@ -44,6 +44,12 @@ def fit(train: pd.DataFrame, valid: pd.DataFrame, cols: list[str], seed: int) ->
     )
 
 
+def train_all(df: pd.DataFrame, cols: list[str], rounds: int) -> lgb.Booster:
+    X = pd.concat([df[cols], features.flip(df[cols])], ignore_index=True)
+    y = np.concatenate([df.team1_won, ~df.team1_won.to_numpy(dtype=bool)]).astype(int)
+    return lgb.train({**PARAMS, "seed": 0}, lgb.Dataset(X, y), num_boost_round=rounds)
+
+
 def predict(model: lgb.Booster, X: pd.DataFrame) -> np.ndarray:
     return (model.predict(X) + 1 - model.predict(features.flip(X))) / 2
 
@@ -71,7 +77,7 @@ def main() -> None:
 
     # Each test season is predicted by a model trained on everything up to two seasons before it,
     # with the season in between used for early stopping.
-    predictions, importance = [], []
+    predictions, importance, rounds = [], [], []
     for year in sorted(y for y in df.year.unique() if y >= args.test_from):
         train, valid, test = df[df.year < year - 1], df[df.year == year - 1], df[df.year == year]
         if train.empty or valid.empty:
@@ -82,6 +88,7 @@ def main() -> None:
         out["p_elo"] = 1 / (1 + np.exp(-test.elo_series_logit))
         predictions.append(out)
         importance.append(pd.Series(model.feature_importance("gain"), index=cols, name=year))
+        rounds.append(model.best_iteration)
         log.info("%d: %d trees, log loss %.4f (elo %.4f)", year, model.best_iteration,
                  metrics.log_loss(out.team1_won, out.p_team1), metrics.log_loss(out.team1_won, out.p_elo))
 
@@ -98,12 +105,17 @@ def main() -> None:
     # Seasons with only a handful of series (e.g. preseason events filed under next year) are too noisy to score.
     test = preds[preds.groupby("year").year.transform("size") >= 200]
 
+    # The production model sees every season; the tree count comes from the walk-forward early stopping.
+    final = train_all(df, cols, int(np.mean(rounds)))
+    test_log_loss = metrics.log_loss(test.team1_won, test.p_team1)
+
     mlflow.set_experiment(EXPERIMENT)
     with mlflow.start_run(run_name=args.name or "+".join(groups)) as run:
         mlflow.set_tag("predictions", "series")
         mlflow.log_params({"groups": args.groups, "train_from": args.train_from, "test_from": args.test_from,
                            "k_league": args.k_league, **{f"lgb_{k}": v for k, v in PARAMS.items()}})
         mlflow.log_metrics({f"test_{k}": v for k, v in metrics.summary(test.team1_won, test.p_team1).items()})
+        mlflow.log_metric("final_trees", final.num_trees())
         mlflow.log_metric("test_elo_log_loss", metrics.log_loss(test.team1_won, test.p_elo))
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
@@ -111,9 +123,12 @@ def main() -> None:
             by_year.to_csv(tmp / "by_year.csv", index_label="year")
             gain.to_csv(tmp / "feature_importance.csv", index_label="feature")
             calibration.to_csv(tmp / "calibration_test.csv", index_label="bucket")
+            registry.save(final, cols, args.k_league, tmp / "model")
             mlflow.log_artifacts(str(tmp))
+        version, promoted = registry.register(run.info.run_id, test_log_loss)
 
-    print(f"\nRun: {run.info.run_id}   groups: {args.groups}\n")
+    print(f"\nRun: {run.info.run_id}   groups: {args.groups}")
+    print(f"Registered {registry.MODEL_NAME} v{version}" + (" as champion" if promoted else ", champion unchanged") + "\n")
     print(by_year.round(4).to_string())
     print(f"\nTest log loss {metrics.log_loss(test.team1_won, test.p_team1):.4f} "
           f"vs Elo {metrics.log_loss(test.team1_won, test.p_elo):.4f}")

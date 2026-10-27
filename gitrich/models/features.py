@@ -84,6 +84,14 @@ class FeatureState:
             "playoffs": float(playoffs),
         }
 
+    def upcoming(self, team1: int, team2: int, when: datetime, best_of: int) -> tuple[dict, list, list]:
+        """Features for a match not yet played. Lineups are unknown, so each team's latest one is assumed."""
+        players1 = sorted(self.history[team1].lineup)
+        players2 = sorted(self.history[team2].lineup)
+        league = self.home(team1, self.home(team2, ""))
+        row = self.snapshot(team1, team2, players1, players2, league, when.year, when, best_of, playoffs=False)
+        return row, players1, players2
+
     def update(self, game) -> None:
         blue_players, red_players = list(game.blue_players), list(game.red_players)
         home_blue = self.home(game.blue_team_id, game.league)
@@ -117,7 +125,16 @@ class FeatureState:
 
 
 def build(games: pd.DataFrame, matches: pd.DataFrame, k_league: float = 16.0) -> pd.DataFrame:
+    return replay(games, matches, k_league)[0]
+
+
+def replay(games: pd.DataFrame, matches: pd.DataFrame | None = None,
+           k_league: float = 16.0) -> tuple[pd.DataFrame, "FeatureState"]:
+    """Walks all games in order. Returns per-series features and the state after the last game."""
     state = FeatureState(k_league)
+    if matches is None:
+        matches = pd.DataFrame(columns=["match_id", "league", "start_time", "best_of",
+                                        "team1_id", "team2_id", "team1_won"])
     series = matches.set_index("match_id")
     rows = []
     seen = set()
@@ -135,7 +152,7 @@ def build(games: pd.DataFrame, matches: pd.DataFrame, k_league: float = 16.0) ->
             rows.append(row)
         state.update(g)
 
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows), state
 
 
 def flip(X: pd.DataFrame) -> pd.DataFrame:

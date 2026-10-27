@@ -16,6 +16,7 @@ The Postgres user is taken from `$USER`. The password is embedded in connection 
 | Service  | Address               |
 |----------|-----------------------|
 | MLflow   | http://localhost:5050 |
+| API      | http://localhost:8000 |
 | Postgres | localhost:5432        |
 
 ## Database
@@ -107,3 +108,20 @@ Gradient boosting on walk-forward pre-series features, grouped so groups can be 
 | `format` | best-of, playoffs |
 
 Each test season is predicted by a model trained on all earlier seasons except the last, which is used for early stopping. Every series is seen from both sides during training and prediction, so team order carries no information. The run logs the Elo log loss on the same series for comparison, and its `series_predictions.parquet` works with `backtest --experiment lol-series-lgbm`.
+
+## Prediction API
+
+`train-lgbm` refits the model on all seasons and registers it as `lol-series` in MLflow. A new version becomes the `champion` alias when its test log loss beats the current champion's. The API serves the champion; after training or loading new games, `POST /reload` picks up both.
+
+| Endpoint | |
+|---|---|
+| `GET /health` | model version and how many games the feature state covers |
+| `GET /upcoming?hours=72` | predictions for upcoming matches with mapped teams |
+| `GET /predict?team1_id=&team2_id=` | any pairing, for each series format |
+| `POST /reload` | reload the champion and replay all games |
+
+Interactive docs are at `/docs`.
+
+Lineups aren't known before a match, so each team's most recent lineup is assumed. The format comes from the markets offered: a match with map 3 or map handicap markets is treated as a Bo3, otherwise a Bo1. Bo5s look identical to Bo3s in the odds, so `p_team1_by_format` returns all three.
+
+`/upcoming` stores the first prediction per match and model version in `core.predictions`, which is the record paper trading is evaluated on.
