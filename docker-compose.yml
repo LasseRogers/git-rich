@@ -67,6 +67,20 @@ services:
       GIT_PYTHON_REFRESH: quiet
     entrypoint: [train-elo]
 
+  backtest:
+    build: .
+    profiles: [jobs]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      mlflow:
+        condition: service_started
+    environment:
+      <<: *app-env
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      GIT_PYTHON_REFRESH: quiet
+    entrypoint: [backtest]
+
   mlflow:
     build: ./services/mlflow
     restart: unless-stopped

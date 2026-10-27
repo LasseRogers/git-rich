@@ -17,6 +17,7 @@ dependencies = [
 ingest-lol = "gitrich.lol.ingest:main"
 ingest-odds = "gitrich.odds.ingest:main"
 train-elo = "gitrich.models.train_elo:main"
+backtest = "gitrich.models.backtest:main"
 
 [build-system]
 requires = ["setuptools>=70"]

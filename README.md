@@ -75,3 +75,14 @@ docker compose run --rm train-elo
 Walk-forward Elo on individual games: every prediction uses only earlier games. In `player` mode a team's rating is the mean of its five players, which carries strength across roster moves and rebrands; `team` mode is kept as a comparison. Series probabilities come from the per-game probability and the best-of format. The blue-side advantage is estimated walk-forward as well.
 
 Parameters are tuned on 2019–2022 and reported on 2023 onwards, which is never used for tuning. Per-season metrics, calibration, series predictions and the final ratings are logged as run artifacts.
+
+### Backtest
+
+```bash
+docker compose run --rm backtest                       # latest Elo run vs Pinnacle
+docker compose run --rm backtest --bookmaker bet365 --threshold 0.05
+```
+
+Bets one unit on the side with the larger expected value when it exceeds the threshold, at the first (`--entry opening`) or last (`--entry closing`) pre-match price collected. Reports ROI, hit rate and closing line value against Pinnacle's margin-free closing price, plus the model's log loss next to the market's on the same matches. Results are logged to the `lol-backtest` experiment.
+
+ROI needs hundreds of bets before it means much; CLV and the log loss comparison are the earlier signals.
