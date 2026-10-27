@@ -3,6 +3,32 @@ name: git-rich
 x-app-env: &app-env
   DATABASE_URL: postgresql+psycopg://${USER:?USER is not set}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
 
+x-ml-env: &ml-env
+  <<: *app-env
+  MLFLOW_TRACKING_URI: http://mlflow:5000
+  GIT_PYTHON_REFRESH: quiet
+
+# All Python services run the same image, so one build updates every job.
+x-app: &app
+  image: git-rich-app
+  build: .
+
+x-job: &job
+  <<: *app
+  profiles: [jobs]
+  depends_on:
+    migrate:
+      condition: service_completed_successfully
+
+x-ml-job: &ml-job
+  <<: *job
+  depends_on:
+    migrate:
+      condition: service_completed_successfully
+    mlflow:
+      condition: service_healthy
+  environment: *ml-env
+
 services:
   postgres:
     image: postgres:17-alpine
@@ -23,7 +49,7 @@ services:
       retries: 10
 
   migrate:
-    build: .
+    <<: *app
     depends_on:
       postgres:
         condition: service_healthy
@@ -31,20 +57,12 @@ services:
     command: alembic upgrade head
 
   ingest:
-    build: .
-    profiles: [jobs]
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
+    <<: *job
     environment: *app-env
     entrypoint: [ingest-lol]
 
   ingest-odds:
-    build: .
-    profiles: [jobs]
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
+    <<: *job
     environment:
       <<: *app-env
       TEAM_ALIASES: /aliases.csv
@@ -54,31 +72,11 @@ services:
     entrypoint: [ingest-odds]
 
   train-elo:
-    build: .
-    profiles: [jobs]
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-      mlflow:
-        condition: service_started
-    environment:
-      <<: *app-env
-      MLFLOW_TRACKING_URI: http://mlflow:5000
-      GIT_PYTHON_REFRESH: quiet
+    <<: *ml-job
     entrypoint: [train-elo]
 
   backtest:
-    build: .
-    profiles: [jobs]
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-      mlflow:
-        condition: service_started
-    environment:
-      <<: *app-env
-      MLFLOW_TRACKING_URI: http://mlflow:5000
-      GIT_PYTHON_REFRESH: quiet
+    <<: *ml-job
     entrypoint: [backtest]
 
   mlflow:
@@ -99,6 +97,11 @@ services:
       - "127.0.0.1:${MLFLOW_PORT:-5050}:5000"
     volumes:
       - mlflow_artifacts:/mlflow/artifacts
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
 
 volumes:
   pgdata:

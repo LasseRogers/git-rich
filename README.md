@@ -6,9 +6,10 @@ Esports match prediction, benchmarked against bookmaker odds.
 
 ```bash
 cp .env.example .env
-docker compose --profile jobs build
-docker compose up -d
+docker compose up -d --build
 ```
+
+All Python services share the `git-rich-app` image, so this also updates the jobs.
 
 The Postgres user is taken from `$USER`. The password is embedded in connection URLs, so avoid `@ : / #`.
 
