@@ -1,5 +1,6 @@
 """Backfills OddsPapi odds history for finished LoL fixtures into the odds-data branch. Stdlib only, like collect.py."""
 import argparse
+import hashlib
 import logging
 import os
 import sys
@@ -70,9 +71,9 @@ def backfill(client: Client, out: Path, tournament_ids: list[int], bookmakers: s
              limit: int, now: datetime) -> None:
     fixtures = finished_fixtures(client, out, tournament_ids, since, now)
     done = out / "history" / "odds"
-    # Oldest first: the regular seasons come before the off-season events at the end of the year.
+    # A fixed shuffle: whatever the budget covers is a fair sample of the season, and reruns resume it.
     todo = sorted((f for f in fixtures if not (done / f"{f['fixtureId']}.json").exists()),
-                  key=lambda f: f["startTime"])
+                  key=lambda f: hashlib.sha256(f["fixtureId"].encode()).hexdigest())
     log.info("%d finished fixtures, %d without history, fetching up to %d", len(fixtures), len(todo), limit)
 
     for fixture in todo[:limit]:
