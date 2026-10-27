@@ -6,7 +6,8 @@ Esports match prediction, benchmarked against bookmaker odds.
 
 ```bash
 cp .env.example .env
-docker compose up -d --build
+docker compose --profile jobs build
+docker compose up -d
 ```
 
 The Postgres user is taken from `$USER`. The password is embedded in connection URLs, so avoid `@ : / #`.
@@ -58,3 +59,5 @@ docker compose run --rm ingest-odds
 ```
 
 Prices are stored per capture, so the series of snapshots gives the line movement. A price captured after a match's `start_time` is in-play, regardless of the source's status field.
+
+The import also maps OddsPapi teams to ours and links each odds event to its match in `core.matches` once Oracle's Elixir has the result. Teams are matched on normalized names among teams active in the last 400 days. Names that don't match are logged; map them in `gitrich/odds/team_aliases.csv` using the team name as it appears in `core.teams`. Aliases also override an incorrect automatic match.

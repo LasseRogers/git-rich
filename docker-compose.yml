@@ -45,9 +45,12 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
-    environment: *app-env
+    environment:
+      <<: *app-env
+      TEAM_ALIASES: /aliases.csv
     volumes:
       - ./data/odds:/odds:ro
+      - ./gitrich/odds/team_aliases.csv:/aliases.csv:ro
     entrypoint: [ingest-odds]
 
   mlflow:

@@ -66,22 +66,25 @@ def load_dir(conn: psycopg.Connection, root: Path) -> LoadStats:
 
 
 def _upsert_event(cur: psycopg.Cursor, fixture: dict, participants: dict, tournaments: dict) -> int:
-    home = participants.get(str(fixture["participant1Id"]), f"oddspapi:{fixture['participant1Id']}")
-    away = participants.get(str(fixture["participant2Id"]), f"oddspapi:{fixture['participant2Id']}")
+    home_id, away_id = str(fixture["participant1Id"]), str(fixture["participant2Id"])
     (event_id,) = cur.execute(
         """
-        INSERT INTO core.odds_events (source, external_id, title, home_name, away_name, start_time, tournament)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO core.odds_events (source, external_id, title, home_name, away_name,
+                                      home_participant_id, away_participant_id, start_time, tournament)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (source, external_id) DO UPDATE SET
             home_name = EXCLUDED.home_name,
             away_name = EXCLUDED.away_name,
+            home_participant_id = EXCLUDED.home_participant_id,
+            away_participant_id = EXCLUDED.away_participant_id,
             start_time = EXCLUDED.start_time,
             tournament = EXCLUDED.tournament,
             updated_at = now()
         RETURNING id
         """,
-        (SOURCE, fixture["fixtureId"], TITLE, home, away,
-         fixture["startTime"], tournaments.get(str(fixture.get("tournamentId")))),
+        (SOURCE, fixture["fixtureId"], TITLE,
+         participants.get(home_id, f"oddspapi:{home_id}"), participants.get(away_id, f"oddspapi:{away_id}"),
+         home_id, away_id, fixture["startTime"], tournaments.get(str(fixture.get("tournamentId")))),
     ).fetchone()
     return event_id
 

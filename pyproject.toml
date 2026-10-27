@@ -20,3 +20,6 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["gitrich*"]
+
+[tool.setuptools.package-data]
+gitrich = ["odds/*.csv"]
