@@ -8,7 +8,9 @@ def load_games(conn: psycopg.Connection) -> pd.DataFrame:
                g.blue_team_id, g.red_team_id, g.winner_side = 'blue' AS blue_won,
                b.gold_diff_15 AS blue_gold_diff_15,
                coalesce(array_agg(p.player_id ORDER BY p.position) FILTER (WHERE p.side = 'blue'), '{}') AS blue_players,
-               coalesce(array_agg(p.player_id ORDER BY p.position) FILTER (WHERE p.side = 'red'), '{}') AS red_players
+               coalesce(array_agg(p.player_id ORDER BY p.position) FILTER (WHERE p.side = 'red'), '{}') AS red_players,
+               coalesce(array_agg(p.champion ORDER BY p.position) FILTER (WHERE p.side = 'blue'), '{}') AS blue_champions,
+               coalesce(array_agg(p.champion ORDER BY p.position) FILTER (WHERE p.side = 'red'), '{}') AS red_champions
         FROM lol.games g
         LEFT JOIN lol.team_stats b ON b.game_id = g.game_id AND b.side = 'blue'
         LEFT JOIN lol.player_stats p ON p.game_id = g.game_id
@@ -16,7 +18,8 @@ def load_games(conn: psycopg.Connection) -> pd.DataFrame:
         ORDER BY g.played_at, g.game_number NULLS FIRST, g.game_id
     """).fetchall()
     columns = ["game_id", "match_id", "league", "year", "played_at", "game_number", "duration_s",
-               "blue_team_id", "red_team_id", "blue_won", "blue_gold_diff_15", "blue_players", "red_players"]
+               "blue_team_id", "red_team_id", "blue_won", "blue_gold_diff_15", "blue_players", "red_players",
+               "blue_champions", "red_champions"]
     return pd.DataFrame(rows, columns=columns)
 
 

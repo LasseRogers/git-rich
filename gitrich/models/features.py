@@ -11,11 +11,16 @@ from gitrich.models import elo
 
 WINDOW = 10
 HOME_WINDOW = 20
+POOL_WINDOW = 20
+H2H_WINDOW = 10
+# Meetings are shrunk toward zero as if this many neutral ones came before them.
+H2H_PRIOR = 5
 
 # Difference features flip sign when the teams are swapped.
 DIFF = [
     "elo_player_diff", "elo_team_diff", "league_offset_diff", "experience_diff",
     "form_diff", "momentum_diff", "gold_diff_15_diff", "rest_days_diff", "games_7d_diff",
+    "h2h_diff", "pool_diff",
 ]
 
 GROUPS = {
@@ -25,6 +30,8 @@ GROUPS = {
     "form": ["form_diff", "momentum_diff", "gold_diff_15_diff"],
     "schedule": ["rest_days_diff", "games_7d_diff"],
     "format": ["best_of"],
+    "h2h": ["h2h_diff"],
+    "pool": ["pool_diff"],
 }
 
 
@@ -46,6 +53,9 @@ class FeatureState:
         # Region strength, learned only from games between teams with different home leagues.
         self.league_offset: dict[str, float] = defaultdict(float)
         self.k_league = k_league
+        # Results against each opponent beyond what player Elo expected, keyed by the pair, from the lower id's side.
+        self.h2h: dict[tuple[int, int], deque] = defaultdict(lambda: deque(maxlen=H2H_WINDOW))
+        self.champions: dict[int, deque] = defaultdict(lambda: deque(maxlen=POOL_WINDOW))
 
     def home(self, team: int, fallback: str) -> str:
         leagues = self.history[team].leagues
@@ -77,6 +87,8 @@ class FeatureState:
             "rest_days_diff": _rest_days(h1, when) - _rest_days(h2, when),
             "games_7d_diff": _games_since(h1, when, 7) - _games_since(h2, when, 7),
             "best_of": float(best_of),
+            "h2h_diff": self._h2h(team1, team2),
+            "pool_diff": self._pool(players1) - self._pool(players2),
         }
 
     def upcoming(self, team1: int, team2: int, when: datetime, best_of: int,
@@ -104,6 +116,7 @@ class FeatureState:
             self.league_offset[home_red] -= delta
 
         if blue_players and red_players:
+            self._update_h2h(game, blue_players, red_players)
             self.players.play(blue_players, red_players, game.league, game.year, game.blue_won)
         self.teams.play([game.blue_team_id], [game.red_team_id], game.league, game.year, game.blue_won)
 
@@ -119,6 +132,29 @@ class FeatureState:
             h.leagues.append(game.league)
             if players:
                 h.lineup = frozenset(players)
+        for player, champion in zip([*blue_players, *red_players],
+                                    [*game.blue_champions, *game.red_champions]):
+            self.champions[player].append(champion)
+
+    def _update_h2h(self, game, blue_players: list, red_players: list) -> None:
+        rb = self.players.strength(blue_players, game.league, game.year)
+        rr = self.players.strength(red_players, game.league, game.year)
+        surprise = float(game.blue_won) - elo.sigmoid((rb - rr) * elo.LN10_400 + self.players.side_logit)
+        blue, red = game.blue_team_id, game.red_team_id
+        self.h2h[(min(blue, red), max(blue, red))].append(surprise if blue < red else -surprise)
+
+    def _h2h(self, team1: int, team2: int) -> float:
+        key = (min(team1, team2), max(team1, team2))
+        if key not in self.h2h:
+            return 0.0
+        meetings = self.h2h[key]
+        value = sum(meetings) / (len(meetings) + H2H_PRIOR)
+        return value if team1 < team2 else -value
+
+    def _pool(self, players: list) -> float:
+        """Distinct champions per player over their recent games, averaged over the lineup."""
+        pools = [len(set(self.champions[p])) for p in players if p in self.champions]
+        return float(np.mean(pools)) if pools else np.nan
 
 
 def build(games: pd.DataFrame, matches: pd.DataFrame, k_league: float = 16.0) -> pd.DataFrame:
