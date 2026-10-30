@@ -165,7 +165,7 @@ Features that describe the match rather than a team (`best_of`, `cross_league`) 
 
 ## Prediction API
 
-`train-lgbm` refits the model on all seasons and registers it as `lol-series` in MLflow. A new version becomes the `champion` alias when its test log loss beats the current champion's. The API serves the champion; after training or loading new games, `POST /reload` picks up both.
+`train-lgbm` refits the model on all seasons and registers it as `lol-series` in MLflow. A new version becomes the `champion` alias unless it predicts the test matches it shares with the current champion worse, so a model retrained with a newer season isn't judged on matches the champion never saw. `--if-older-than DAYS` skips training while the newest version is younger than that, and `--fail-unless-promoted` exits with an error when the champion is kept. The API serves the champion; after training or loading new games, `POST /reload` picks up both.
 
 | Endpoint | |
 |---|---|
@@ -207,7 +207,7 @@ http://localhost:8501 shows the bets to place on upcoming matches, and how the p
 ./scripts/update.sh
 ```
 
-Brings everything up to date in the order that keeps paper trading honest: pulls the odds, settles and places paper bets, loads the match data that changed, reloads the API, then settles bets on matches that just got results. A failed step doesn't stop the others; the run exits non-zero and sends a desktop notification listing what failed.
+Brings everything up to date in the order that keeps paper trading honest: pulls the odds, settles and places paper bets, loads the match data that changed, retrains the model once it's a month old, reloads the API, then settles bets on matches that just got results. A failed step doesn't stop the others; the run exits non-zero and sends a desktop notification listing what failed.
 
 To run it on Monday, Wednesday and Friday at 18:00:
 

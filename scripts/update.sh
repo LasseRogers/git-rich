@@ -59,6 +59,8 @@ step "wait for the API" wait_for_api
 step "pull odds" pull_odds
 step "load odds and place paper bets" run_job ingest-odds
 step "load match data" run_job ingest
+# Monthly, so the model keeps learning from new seasons without anyone retraining it.
+step "retrain the model" run_job train-lgbm --name scheduled --if-older-than 30 --fail-unless-promoted
 step "reload the API" curl -fsS -X POST --max-time 900 -o /dev/null "$(api /reload)"
 # Settles bets on matches whose results just arrived.
 step "settle bets" run_job ingest-odds

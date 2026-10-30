@@ -1,17 +1,23 @@
 import json
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import lightgbm as lgb
 import mlflow
+import pandas as pd
 from mlflow import MlflowClient
 from mlflow.exceptions import MlflowException
+
+from gitrich.models import metrics
 
 log = logging.getLogger(__name__)
 
 MODEL_NAME = "lol-series"
 CHAMPION = "champion"
+# Retraining with the same code reproduces the champion's walk-forward predictions up to float noise.
+TOLERANCE = 0.001
 
 
 @dataclass
@@ -29,8 +35,12 @@ def save(booster: lgb.Booster, columns: list[str], k_league: float, path: Path) 
     (path / "meta.json").write_text(json.dumps({"columns": columns, "k_league": k_league}))
 
 
-def register(run_id: str, test_log_loss: float) -> tuple[str, bool]:
-    """Registers the run's model and promotes it if it beats the current champion on test log loss."""
+def register(run_id: str, test: pd.DataFrame) -> tuple[str, bool]:
+    """Registers the run's model and promotes it unless it predicts the champion's test matches worse.
+
+    Comparing on shared matches keeps a model retrained with newer seasons from being judged against
+    a test set the champion never saw.
+    """
     client = MlflowClient()
     try:
         client.create_registered_model(MODEL_NAME)
@@ -41,11 +51,19 @@ def register(run_id: str, test_log_loss: float) -> tuple[str, bool]:
     version = client.create_model_version(MODEL_NAME, source=source, run_id=run_id).version
 
     champion = _champion(client)
-    best = client.get_run(champion.run_id).data.metrics.get("test_log_loss") if champion else None
-    promote = best is None or test_log_loss < best
+    promote = champion is None or _at_least_as_good(test, champion.run_id)
     if promote:
         client.set_registered_model_alias(MODEL_NAME, CHAMPION, version)
     return version, promote
+
+
+def latest_age() -> timedelta | None:
+    """How long ago the newest version was registered, promoted or not."""
+    versions = MlflowClient().search_model_versions(f"name = '{MODEL_NAME}'")
+    if not versions:
+        return None
+    newest = max(v.creation_timestamp for v in versions)
+    return datetime.now(timezone.utc) - datetime.fromtimestamp(newest / 1000, timezone.utc)
 
 
 def load_champion() -> LoadedModel | None:
@@ -61,6 +79,19 @@ def load_champion() -> LoadedModel | None:
         version=champion.version,
         run_id=champion.run_id,
     )
+
+
+def _at_least_as_good(test: pd.DataFrame, champion_run: str) -> bool:
+    path = mlflow.artifacts.download_artifacts(run_id=champion_run, artifact_path="series_predictions.parquet")
+    champion = pd.read_parquet(path)[["match_id", "p_team1"]]
+    shared = test.merge(champion, on="match_id", suffixes=("", "_champion"))
+    if shared.empty:
+        log.warning("no test matches in common with the champion, keeping it")
+        return False
+    new = metrics.log_loss(shared.team1_won, shared.p_team1)
+    old = metrics.log_loss(shared.team1_won, shared.p_team1_champion)
+    log.info("%d shared test matches: log loss %.4f vs champion %.4f", len(shared), new, old)
+    return new <= old + TOLERANCE
 
 
 def _champion(client: MlflowClient):

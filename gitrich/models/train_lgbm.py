@@ -1,6 +1,8 @@
 import argparse
 import logging
+import sys
 import tempfile
+from datetime import timedelta
 from pathlib import Path
 
 import lightgbm as lgb
@@ -62,9 +64,20 @@ def main() -> None:
     parser.add_argument("--test-from", type=int, default=2023)
     parser.add_argument("--k-league", type=float, default=16.0)
     parser.add_argument("--name", help="MLflow run name")
+    parser.add_argument("--if-older-than", type=int, metavar="DAYS",
+                        help="only train if the newest registered model is at least this many days old")
+    parser.add_argument("--fail-unless-promoted", action="store_true",
+                        help="exit with an error if the new model doesn't become the champion")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
+    if args.if_older_than is not None:
+        age = registry.latest_age()
+        if age is not None and age < timedelta(days=args.if_older_than):
+            log.info("newest model is %d days old, not retraining", age.days)
+            return
+
     groups = args.groups.split(",")
     cols = features.columns(groups)
 
@@ -107,7 +120,6 @@ def main() -> None:
 
     # The production model sees every season; the tree count comes from the walk-forward early stopping.
     final = train_all(df, cols, int(np.mean(rounds)))
-    test_log_loss = metrics.log_loss(test.team1_won, test.p_team1)
 
     mlflow.set_experiment(EXPERIMENT)
     with mlflow.start_run(run_name=args.name or "+".join(groups)) as run:
@@ -125,7 +137,7 @@ def main() -> None:
             calibration.to_csv(tmp / "calibration_test.csv", index_label="bucket")
             registry.save(final, cols, args.k_league, tmp / "model")
             mlflow.log_artifacts(str(tmp))
-        version, promoted = registry.register(run.info.run_id, test_log_loss)
+        version, promoted = registry.register(run.info.run_id, test)
 
     print(f"\nRun: {run.info.run_id}   groups: {args.groups}")
     print(f"Registered {registry.MODEL_NAME} v{version}" + (" as champion" if promoted else ", champion unchanged") + "\n")
@@ -136,6 +148,9 @@ def main() -> None:
     print(gain.round(3).to_string())
     print("\nCalibration (favourite's predicted vs observed win rate):")
     print(calibration.round(3).to_string())
+
+    if args.fail_unless_promoted and not promoted:
+        sys.exit(f"v{version} predicts the champion's test matches worse, so the champion was kept")
 
 
 if __name__ == "__main__":
