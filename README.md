@@ -215,4 +215,11 @@ To run it on Monday, Wednesday and Friday at 18:00:
 ./scripts/install-timer.sh
 ```
 
-This installs a systemd user timer. A run missed while the machine was off happens at the next start, and lingering is enabled so it also runs with nobody logged in. `journalctl --user -u git-rich-update` shows past runs, and `systemctl --user start git-rich-update` runs one now.
+This installs a systemd user timer. A run missed while the machine was off happens at the next start, and lingering is enabled so it also runs with nobody logged in.
+
+````bash
+journalctl --user -u git-rich-update                    # past runs
+systemctl --user list-timers git-rich-update            # the next run
+systemctl --user start git-rich-update                  # run one now
+systemctl --user disable --now git-rich-update.timer    # stop scheduling, e.g. once a server takes over
+```
