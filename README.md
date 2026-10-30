@@ -200,3 +200,19 @@ CLV compares the price taken with Pinnacle's margin-free closing price, whicheve
 ## Panel
 
 http://localhost:8501 shows the bets to place on upcoming matches, and how the paper bets would have done with any amount per bet.
+
+## Updates
+
+```bash
+./scripts/update.sh
+```
+
+Brings everything up to date in the order that keeps paper trading honest: pulls the odds, settles and places paper bets, loads the match data that changed, reloads the API, then settles bets on matches that just got results. A failed step doesn't stop the others; the run exits non-zero and sends a desktop notification listing what failed.
+
+To run it on Monday, Wednesday and Friday at 18:00:
+
+```bash
+./scripts/install-timer.sh
+```
+
+This installs a systemd user timer. A run missed while the machine was off happens at the next start, and lingering is enabled so it also runs with nobody logged in. `journalctl --user -u git-rich-update` shows past runs, and `systemctl --user start git-rich-update` runs one now.
