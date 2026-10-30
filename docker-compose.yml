@@ -59,7 +59,12 @@ services:
 
   ingest:
     <<: *job
-    environment: *app-env
+    environment:
+      <<: *app-env
+      GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/google-credentials.json
+    volumes:
+      # Without GOOGLE_CREDENTIALS this mounts an empty file, and ingest-lol explains what's missing.
+      - ${GOOGLE_CREDENTIALS:-/dev/null}:/run/secrets/google-credentials.json:ro
     entrypoint: [ingest-lol]
 
   ingest-odds:

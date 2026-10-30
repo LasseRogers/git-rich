@@ -1,40 +1,67 @@
+"""Oracle's Elixir match data, read from the Google Drive folder it publishes to.
+
+Drive refuses anonymous downloads of popular files for up to a day at a time, so requests are made as a
+service account (GOOGLE_APPLICATION_CREDENTIALS) with read-only access.
+"""
+from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
-import gdown
-from gdown.exceptions import FileURLRetrievalError
+import google.auth
+from google.auth.exceptions import DefaultCredentialsError
+from google.auth.transport.requests import AuthorizedSession
 
 FOLDER_ID = "1gLSw0RLjBbtaNy0dgnGQDAZOHIgCe-HH"
+API = "https://www.googleapis.com/drive/v3/files"
+SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
 
 
-class QuotaExceeded(Exception):
+class MissingCredentials(Exception):
     pass
 
 
-def download_years(years: list[int], dest: Path) -> list[Path]:
-    # File IDs change when Oracle's Elixir replaces a year's file, so resolve them from the folder listing.
-    listing = gdown.download_folder(id=FOLDER_ID, skip_download=True, quiet=True, retries=3)
-    files = {
-        int(Path(f.path).name[:4]): f
-        for f in listing
-        if Path(f.path).name[:4].isdigit() and f.path.endswith(".csv")
-    }
+@dataclass(frozen=True)
+class SourceFile:
+    id: str
+    name: str
+    modified_at: datetime
 
-    missing = [y for y in years if y not in files]
-    if missing:
-        raise LookupError(f"No Oracle's Elixir file for {missing}, available: {sorted(files)}")
+    @property
+    def year(self) -> int:
+        return int(self.name[:4])
 
-    dest.mkdir(parents=True, exist_ok=True)
-    paths = []
-    for year in years:
-        file = files[year]
-        out = dest / Path(file.path).name
+
+class Drive:
+    def __init__(self):
         try:
-            gdown.download(id=file.id, output=str(out), quiet=True, retries=3)
-        except FileURLRetrievalError as e:
-            # Drive throttles popular public files; the browser usually still works.
-            raise QuotaExceeded(
-                f"Google Drive refused {out.name}. Download it from "
-                f"https://drive.google.com/uc?id={file.id} and load it with --file."
+            credentials, _ = google.auth.default(scopes=SCOPES)
+        except DefaultCredentialsError as e:
+            raise MissingCredentials(
+                "No Google service account key; set GOOGLE_CREDENTIALS in .env (see README), "
+                "or load a downloaded file with --file."
             ) from e
-        paths.append(out)
-    return paths
+        self.session = AuthorizedSession(credentials)
+
+    def files(self) -> list[SourceFile]:
+        """The yearly CSVs, oldest first. IDs change when a year's file is replaced, so they're looked up each time."""
+        resp = self.session.get(API, timeout=60, params={
+            "q": f"'{FOLDER_ID}' in parents and trashed = false",
+            "fields": "files(id,name,modifiedTime)",
+            "pageSize": 1000,
+        })
+        resp.raise_for_status()
+        files = [
+            SourceFile(f["id"], f["name"], datetime.fromisoformat(f["modifiedTime"]))
+            for f in resp.json()["files"]
+            if f["name"][:4].isdigit() and f["name"].endswith(".csv")
+        ]
+        return sorted(files, key=lambda f: f.name)
+
+    def download(self, file: SourceFile, dest: Path) -> Path:
+        path = dest / file.name
+        with self.session.get(f"{API}/{file.id}", params={"alt": "media"}, stream=True, timeout=600) as resp:
+            resp.raise_for_status()
+            with path.open("wb") as out:
+                for chunk in resp.iter_content(1 << 20):
+                    out.write(chunk)
+        return path

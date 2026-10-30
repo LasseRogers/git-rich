@@ -7,7 +7,7 @@ dependencies = [
     "alembic==1.20.1",
     "psycopg[binary]==3.3.6",
     "pandas==3.1.0",
-    "gdown==6.4.2",
+    "google-auth[requests]==2.62.0",
     "numpy==2.5.4",
     "pyarrow==26.0.0",
     "mlflow-skinny==3.17.2",

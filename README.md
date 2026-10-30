@@ -29,13 +29,26 @@ Schemas are managed with Alembic and applied by the `migrate` service on startup
 
 ## Data
 
-Match data comes from [Oracle's Elixir](https://oracleselixir.com/tools/downloads), one file per year, updated daily.
+Match data comes from [Oracle's Elixir](https://oracleselixir.com/tools/downloads), one CSV per year, updated daily on Google Drive.
 
 ```bash
-docker compose run --rm ingest 2024 2025 2026
+docker compose run --rm ingest              # every file that changed since it was last loaded
+docker compose run --rm ingest 2025 2026    # reload specific years
 ```
 
-Without arguments the current year is loaded. Loads are idempotent, so re-running a year picks up new games.
+Each loaded file's version is recorded in `lol.source_files`, so a run only downloads what Oracle's Elixir has changed, including corrections to earlier years.
+
+Drive refuses anonymous downloads of popular files for up to a day at a time, so files are fetched through the Drive API as a service account. It only reads public files, so it needs no roles. Once:
+
+1. Create a Google Cloud project and enable the Google Drive API.
+2. Create a service account, add a JSON key, and keep it outside the repository, e.g. `~/.config/git-rich/google-credentials.json` with mode 600.
+3. Set `GOOGLE_CREDENTIALS` in `.env` to its path.
+
+A file downloaded by hand can still be loaded directly:
+
+```bash
+docker compose run --rm -v ./data/raw:/raw:ro ingest --file /raw/2026_LoL_esports_match_data_from_OraclesElixir.csv
+```
 
 Series aren't part of the source data. They're reconstructed from consecutive games between the same teams, and `best_of` is inferred from the winning score.
 
