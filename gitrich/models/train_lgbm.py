@@ -30,6 +30,14 @@ PARAMS = {
     "verbose": -1,
 }
 
+# A higher rating can only make a team more likely to win. Forcing that stops thin corners of the data
+# from bending the curve the wrong way.
+MONOTONE = {"elo_player_diff": 1, "elo_team_diff": 1, "elo_series_logit": 1, "league_offset_diff": 1}
+
+
+def params(cols: list[str], seed: int) -> dict:
+    return {**PARAMS, "seed": seed, "monotone_constraints": [MONOTONE.get(c, 0) for c in cols]}
+
 
 def fit(train: pd.DataFrame, valid: pd.DataFrame, cols: list[str], seed: int) -> lgb.Booster:
     # Train on both orientations so the model can't learn anything from which team is listed first.
@@ -38,7 +46,7 @@ def fit(train: pd.DataFrame, valid: pd.DataFrame, cols: list[str], seed: int) ->
     Xv = pd.concat([valid[cols], features.flip(valid[cols])], ignore_index=True)
     yv = np.concatenate([valid.team1_won, ~valid.team1_won.to_numpy(dtype=bool)]).astype(int)
     return lgb.train(
-        {**PARAMS, "seed": seed},
+        params(cols, seed),
         lgb.Dataset(X, y),
         num_boost_round=3000,
         valid_sets=[lgb.Dataset(Xv, yv)],
@@ -49,7 +57,7 @@ def fit(train: pd.DataFrame, valid: pd.DataFrame, cols: list[str], seed: int) ->
 def train_all(df: pd.DataFrame, cols: list[str], rounds: int) -> lgb.Booster:
     X = pd.concat([df[cols], features.flip(df[cols])], ignore_index=True)
     y = np.concatenate([df.team1_won, ~df.team1_won.to_numpy(dtype=bool)]).astype(int)
-    return lgb.train({**PARAMS, "seed": 0}, lgb.Dataset(X, y), num_boost_round=rounds)
+    return lgb.train(params(cols, 0), lgb.Dataset(X, y), num_boost_round=rounds)
 
 
 def predict(model: lgb.Booster, X: pd.DataFrame) -> np.ndarray:
@@ -125,7 +133,8 @@ def main() -> None:
     with mlflow.start_run(run_name=args.name or "+".join(groups)) as run:
         mlflow.set_tags({"predictions": "series", "model": "lgbm"})
         mlflow.log_params({"groups": args.groups, "train_from": args.train_from, "test_from": args.test_from,
-                           "k_league": args.k_league, **{f"lgb_{k}": v for k, v in PARAMS.items()}})
+                           "k_league": args.k_league, "monotone": ",".join(c for c in cols if c in MONOTONE),
+                           **{f"lgb_{k}": v for k, v in PARAMS.items()}})
         mlflow.log_metrics({f"test_{k}": v for k, v in metrics.summary(test.team1_won, test.p_team1).items()})
         mlflow.log_metric("final_trees", final.num_trees())
         mlflow.log_metric("test_elo_log_loss", metrics.log_loss(test.team1_won, test.p_elo))
