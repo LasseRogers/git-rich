@@ -2,6 +2,8 @@
 
 Esports match prediction, benchmarked against bookmaker odds.
 
+![git rich workflow](docs/architecture.svg)
+
 ## Setup
 
 ```bash
