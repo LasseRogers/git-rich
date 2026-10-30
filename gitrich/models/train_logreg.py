@@ -10,7 +10,7 @@ import pandas as pd
 
 from gitrich.db import connect
 from gitrich.lol.data import load_games, load_matches
-from gitrich.models import features, metrics
+from gitrich.models import features, metrics, tracking
 
 log = logging.getLogger("train-logreg")
 
@@ -123,8 +123,7 @@ def main() -> None:
         mlflow.set_tags({"predictions": "series", "model": "logreg"})
         mlflow.log_params({"groups": args.groups, "train_from": args.train_from, "test_from": args.test_from,
                            "k_league": args.k_league, "l2": args.l2})
-        mlflow.log_metrics({f"test_{k}": v for k, v in metrics.summary(test.team1_won, test.p_team1).items()})
-        mlflow.log_metric("test_elo_log_loss", metrics.log_loss(test.team1_won, test.p_elo))
+        tracking.log_test(test)
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             preds.drop(columns="p_elo").to_parquet(tmp / "series_predictions.parquet", index=False)

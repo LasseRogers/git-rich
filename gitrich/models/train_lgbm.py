@@ -2,6 +2,7 @@ import argparse
 import logging
 import sys
 import tempfile
+import time
 from datetime import timedelta
 from pathlib import Path
 
@@ -12,7 +13,7 @@ import pandas as pd
 
 from gitrich.db import connect
 from gitrich.lol.data import load_games, load_matches
-from gitrich.models import features, metrics, registry
+from gitrich.models import features, metrics, registry, tracking
 
 log = logging.getLogger("train-lgbm")
 
@@ -39,19 +40,22 @@ def params(cols: list[str], seed: int) -> dict:
     return {**PARAMS, "seed": seed, "monotone_constraints": [MONOTONE.get(c, 0) for c in cols]}
 
 
-def fit(train: pd.DataFrame, valid: pd.DataFrame, cols: list[str], seed: int) -> lgb.Booster:
+def fit(train: pd.DataFrame, valid: pd.DataFrame, cols: list[str], seed: int) -> tuple[lgb.Booster, list[float]]:
+    """The model, and its validation log loss after each tree."""
     # Train on both orientations so the model can't learn anything from which team is listed first.
     X = pd.concat([train[cols], features.flip(train[cols])], ignore_index=True)
     y = np.concatenate([train.team1_won, ~train.team1_won.to_numpy(dtype=bool)]).astype(int)
     Xv = pd.concat([valid[cols], features.flip(valid[cols])], ignore_index=True)
     yv = np.concatenate([valid.team1_won, ~valid.team1_won.to_numpy(dtype=bool)]).astype(int)
-    return lgb.train(
+    evals = {}
+    model = lgb.train(
         params(cols, seed),
         lgb.Dataset(X, y),
         num_boost_round=3000,
         valid_sets=[lgb.Dataset(Xv, yv)],
-        callbacks=[lgb.early_stopping(100, verbose=False)],
+        callbacks=[lgb.early_stopping(100, verbose=False), lgb.record_evaluation(evals)],
     )
+    return model, evals["valid_0"]["binary_logloss"]
 
 
 def train_all(df: pd.DataFrame, cols: list[str], rounds: int) -> lgb.Booster:
@@ -77,6 +81,7 @@ def main() -> None:
     parser.add_argument("--fail-unless-promoted", action="store_true",
                         help="exit with an error if the new model doesn't become the champion")
     args = parser.parse_args()
+    started = time.monotonic()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -98,12 +103,12 @@ def main() -> None:
 
     # Each test season is predicted by a model trained on everything up to two seasons before it,
     # with the season in between used for early stopping.
-    predictions, importance, rounds = [], [], []
+    predictions, importance, rounds, curves = [], [], [], {}
     for year in sorted(y for y in df.year.unique() if y >= args.test_from):
         train, valid, test = df[df.year < year - 1], df[df.year == year - 1], df[df.year == year]
         if train.empty or valid.empty:
             continue
-        model = fit(train, valid, cols, seed=year)
+        model, curves[year] = fit(train, valid, cols, seed=year)
         out = test[["match_id", "league", "year", "start_time", "best_of", "team1_id", "team2_id", "team1_won"]].copy()
         out["p_team1"] = predict(model, test[cols])
         out["p_elo"] = 1 / (1 + np.exp(-test.elo_series_logit))
@@ -135,9 +140,12 @@ def main() -> None:
         mlflow.log_params({"groups": args.groups, "train_from": args.train_from, "test_from": args.test_from,
                            "k_league": args.k_league, "monotone": ",".join(c for c in cols if c in MONOTONE),
                            **{f"lgb_{k}": v for k, v in PARAMS.items()}})
-        mlflow.log_metrics({f"test_{k}": v for k, v in metrics.summary(test.team1_won, test.p_team1).items()})
-        mlflow.log_metric("final_trees", final.num_trees())
-        mlflow.log_metric("test_elo_log_loss", metrics.log_loss(test.team1_won, test.p_elo))
+        mlflow.log_param("data_newest_game", games.played_at.max().isoformat())
+        mlflow.log_metrics({"final_trees": final.num_trees(), "data_series": len(df)})
+        tracking.log_test(test)
+        # Every tenth tree is enough to see where early stopping cut each season's model off.
+        for year, curve in curves.items():
+            tracking.log_steps(f"learning_curve_{year}", {i: v for i, v in enumerate(curve, 1) if i % 10 == 0})
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             preds.drop(columns="p_elo").to_parquet(tmp / "series_predictions.parquet", index=False)
@@ -147,6 +155,7 @@ def main() -> None:
             registry.save(final, cols, args.k_league, tmp / "model")
             mlflow.log_artifacts(str(tmp))
         version, promoted = registry.register(run.info.run_id, test)
+        mlflow.log_metric("train_seconds", time.monotonic() - started)
 
     print(f"\nRun: {run.info.run_id}   groups: {args.groups}")
     print(f"Registered {registry.MODEL_NAME} v{version}" + (" as champion" if promoted else ", champion unchanged") + "\n")

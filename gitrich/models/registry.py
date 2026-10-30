@@ -90,7 +90,11 @@ def _at_least_as_good(test: pd.DataFrame, champion_run: str) -> bool:
         return False
     new = metrics.log_loss(shared.team1_won, shared.p_team1)
     old = metrics.log_loss(shared.team1_won, shared.p_team1_champion)
-    log.info("%d shared test matches: log loss %.4f vs champion %.4f", len(shared), new, old)
+    gain, low, high = metrics.gain(shared.team1_won, shared.p_team1_champion, shared.p_team1)
+    mlflow.log_metrics({"champion_shared_n": len(shared), "champion_gain": gain,
+                        "champion_gain_low": low, "champion_gain_high": high})
+    log.info("%d shared test matches: log loss %.4f vs champion %.4f (gain %.4f, 95%% interval %.4f to %.4f)",
+             len(shared), new, old, gain, low, high)
     return new <= old + TOLERANCE
 
 

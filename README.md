@@ -109,7 +109,18 @@ It covers the major domestic leagues by default; pass `-f tournaments="..."` wit
 
 ## Models
 
-Every model logs to the `lol-series` experiment in MLflow, tagged `model=elo`, `lgbm` or `logreg`, so runs can be compared side by side on test log loss.
+Every model logs to the `lol-series` experiment in MLflow, tagged `model=elo`, `lgbm` or `logreg`, with the same test metrics so runs compare side by side:
+
+| Metric | |
+|---|---|
+| `test_log_loss`, `test_brier`, `test_accuracy` | all test series |
+| `test_ece` | calibration error: the average gap between predicted and observed win rates |
+| `test_major_log_loss` | each region's top league and international events, where nearly all bets are placed |
+| `test_bo1_log_loss`, `test_bo3_bo5_log_loss` | single games and longer series |
+| `season_log_loss` | per season, logged with the season as the step so MLflow draws it as a line |
+| `elo_gain`, `elo_gain_low`, `elo_gain_high` | how much lower the log loss is than Elo's on the same series, with a 95% bootstrap interval; an interval that includes zero could be luck. Logged by LightGBM and logistic regression, along with `season_elo_log_loss` |
+
+LightGBM also logs `champion_gain` and its interval on the matches it shares with the current champion, a `learning_curve_<season>` of validation log loss per tree for each walk-forward model, the newest game in its data (`data_newest_game`) and `train_seconds`.
 
 ### Elo baseline
 
@@ -223,5 +234,5 @@ This installs a systemd user timer. A run missed while the machine was off happe
 journalctl --user -u git-rich-update                    # past runs
 systemctl --user list-timers git-rich-update            # the next run
 systemctl --user start git-rich-update                  # run one now
-systemctl --user disable --now git-rich-update.timer    # stop scheduling, e.g. once a server takes over
+systemctl --user disable --now git-rich-update.timer    # stop scheduling
 ```

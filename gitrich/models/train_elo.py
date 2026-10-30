@@ -10,7 +10,7 @@ import pandas as pd
 
 from gitrich.db import connect
 from gitrich.lol.data import load_games, load_matches
-from gitrich.models import elo, metrics
+from gitrich.models import elo, metrics, tracking
 
 log = logging.getLogger("train-elo")
 
@@ -63,7 +63,7 @@ def main() -> None:
         test = series[series.year >= args.test_from]
 
         mlflow.log_params({f"best_{k}": v for k, v in asdict(best).items()})
-        mlflow.log_metrics({f"test_{k}": v for k, v in metrics.summary(test.team1_won, test.p_team1).items()})
+        tracking.log_test(test, elo=None)
         mlflow.log_metrics({"test_coinflip_log_loss": metrics.log_loss(test.team1_won, [0.5] * len(test))})
 
         by_year = pd.DataFrame(
