@@ -3,6 +3,8 @@
 set -uo pipefail
 
 cd "$(dirname "$0")/.." || exit 1
+# shellcheck source=scripts/settings.sh
+source scripts/settings.sh
 
 exec 9>"${XDG_RUNTIME_DIR:-/tmp}/git-rich-update.lock"
 if ! flock -n 9; then
@@ -53,19 +55,6 @@ notify() {
     return 0
 }
 
-env_value() {
-    sed -n "s/^$1=//p" .env 2>/dev/null | tail -n 1
-}
-
-alert_failure() {
-    # The same ntfy.sh topic the Python jobs use; see docs/alerts.md.
-    local topic
-    topic=$(env_value NTFY_TOPIC)
-    [[ -n $topic && $(env_value ALERT_FAILURES) != false ]] || return 0
-    curl -fsS --max-time 10 -H "Title: git-rich update failed" -H "Priority: high" -H "Tags: warning" \
-        -d "$1" "https://ntfy.sh/$topic" >/dev/null || true
-}
-
 step "start services" docker compose up -d
 step "wait for the API" wait_for_api
 # Odds before results, so paper bets are decided without seeing them.
@@ -81,7 +70,7 @@ step "settle bets" run_job -e ALERT_UNMAPPED_TEAMS=false ingest-odds
 if (( ${#failed[@]} )); then
     summary=$(printf '%s, ' "${failed[@]}")
     notify --urgency=critical "git-rich update failed" "${summary%, }"
-    alert_failure "Failed: ${summary%, }. Details: journalctl --user -u git-rich-update"
+    alert_failure "git-rich update failed" "Failed: ${summary%, }. Details: journalctl --user -u git-rich-update"
     exit 1
 fi
 notify "git-rich updated" "Odds, paper bets and match data are up to date."

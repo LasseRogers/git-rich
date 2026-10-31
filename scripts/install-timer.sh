@@ -1,35 +1,45 @@
 #!/usr/bin/env bash
-# Runs scripts/update.sh on Monday, Wednesday and Friday evenings through a systemd user timer.
+# Schedules scripts/update.sh on Monday, Wednesday and Friday evenings, and scripts/backup.sh weekly
+# once BACKUP_BUCKET is set, through systemd user timers.
 set -euo pipefail
 
 repo=$(cd "$(dirname "$0")/.." && pwd)
 units=${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user
 mkdir -p "$units"
 
-cat > "$units/git-rich-update.service" <<EOF
+timer() {
+    local name=$1 description=$2 script=$3 calendar=$4
+    cat > "$units/$name.service" <<EOF
 [Unit]
-Description=Update git-rich odds, paper bets and match data
+Description=$description
 
 [Service]
 Type=oneshot
-ExecStart=$repo/scripts/update.sh
+ExecStart=$repo/scripts/$script
 EOF
-
-# Persistent catches up on a run missed while the machine was off.
-cat > "$units/git-rich-update.timer" <<EOF
+    # Persistent catches up on a run missed while the machine was off.
+    cat > "$units/$name.timer" <<EOF
 [Unit]
-Description=Update git-rich on Monday, Wednesday and Friday evenings
+Description=$description
 
 [Timer]
-OnCalendar=Mon,Wed,Fri 18:00
+OnCalendar=$calendar
 Persistent=true
 
 [Install]
 WantedBy=timers.target
 EOF
+}
 
-# Lets the timer run without anyone logged in, as on a server.
+timer git-rich-update "Update git-rich odds, paper bets and match data" update.sh "Mon,Wed,Fri 18:00"
+timers=(git-rich-update.timer)
+if grep -q '^BACKUP_BUCKET=.' "$repo/.env" 2>/dev/null; then
+    timer git-rich-backup "Back up git-rich to Object Storage" backup.sh "Sun 03:00"
+    timers+=(git-rich-backup.timer)
+fi
+
+# Lets the timers run without anyone logged in, as on a server.
 loginctl enable-linger "$USER"
 systemctl --user daemon-reload
-systemctl --user enable --now git-rich-update.timer
-systemctl --user list-timers git-rich-update.timer
+systemctl --user enable --now "${timers[@]}"
+systemctl --user list-timers "${timers[@]}"

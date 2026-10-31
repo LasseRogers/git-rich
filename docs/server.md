@@ -42,3 +42,5 @@ ssh -L 8501:localhost:8501 -L 5050:localhost:5050 -L 8000:localhost:8000 ubuntu@
 ```
 
 The panel is then at http://localhost:8501, MLflow at http://localhost:5050 and the API at http://localhost:8000, or whichever ports `.env` sets.
+
+The server is the only copy of the paper bets and MLflow history, so set up [weekly backups](backup.md).
