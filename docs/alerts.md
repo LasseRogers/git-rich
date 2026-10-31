@@ -23,8 +23,10 @@ Leaving `NTFY_TOPIC` empty turns every alert off. Each kind also has its own swi
 | `ALERT_WORSE_MODEL` | a retrained model predicts the champion's test matches worse and is kept out |
 | `ALERT_NEW_BETS` | a paper bet is placed, with the team, odds, bookmaker and start time |
 
-The containers read the settings at start, so restart them after a change with `docker compose up -d`. To check the topic without waiting for an alert:
+The containers read the settings at start, so restart them after a change with `docker compose up -d`. To check the topic without waiting for an alert, without printing it (ntfy's reply repeats it):
 
 ```bash
-curl -d "Test from git-rich" "https://ntfy.sh/$(sed -n 's/^NTFY_TOPIC=//p' .env)"
+curl -s -o /dev/null -w "%{http_code}\n" -d "Test from git-rich" "https://ntfy.sh/$(sed -n 's/^NTFY_TOPIC=//p' .env)"
 ```
+
+`200` means it was sent.
