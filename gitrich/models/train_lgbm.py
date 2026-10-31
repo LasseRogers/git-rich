@@ -1,6 +1,5 @@
 import argparse
 import logging
-import sys
 import tempfile
 import time
 from datetime import timedelta
@@ -11,6 +10,7 @@ import mlflow
 import numpy as np
 import pandas as pd
 
+from gitrich import alerts
 from gitrich.db import connect
 from gitrich.lol.data import load_games, load_matches
 from gitrich.models import features, metrics, registry, tracking
@@ -78,8 +78,6 @@ def main() -> None:
     parser.add_argument("--name", help="MLflow run name")
     parser.add_argument("--if-older-than", type=int, metavar="DAYS",
                         help="only train if the newest registered model is at least this many days old")
-    parser.add_argument("--fail-unless-promoted", action="store_true",
-                        help="exit with an error if the new model doesn't become the champion")
     args = parser.parse_args()
     started = time.monotonic()
 
@@ -167,8 +165,10 @@ def main() -> None:
     print("\nCalibration (favourite's predicted vs observed win rate):")
     print(calibration.round(3).to_string())
 
-    if args.fail_unless_promoted and not promoted:
-        sys.exit(f"v{version} predicts the champion's test matches worse, so the champion was kept")
+    if not promoted:
+        alerts.send("worse_model", "Retrained model kept out",
+                    f"{registry.MODEL_NAME} v{version} predicts the champion's test matches worse, "
+                    "so the champion keeps serving.", tags=("chart_with_downwards_trend",))
 
 
 if __name__ == "__main__":

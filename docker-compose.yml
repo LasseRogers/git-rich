@@ -2,6 +2,10 @@ name: git-rich
 
 x-app-env: &app-env
   DATABASE_URL: postgresql+psycopg://${USER:?USER is not set}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+  NTFY_TOPIC: ${NTFY_TOPIC:-}
+  ALERT_UNMAPPED_TEAMS: ${ALERT_UNMAPPED_TEAMS:-true}
+  ALERT_WORSE_MODEL: ${ALERT_WORSE_MODEL:-true}
+  ALERT_NEW_BETS: ${ALERT_NEW_BETS:-true}
 
 x-ml-env: &ml-env
   <<: *app-env

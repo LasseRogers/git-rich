@@ -6,6 +6,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from gitrich import alerts
 from gitrich.betting.settle import settle
 from gitrich.db import connect
 from gitrich.odds.link import link
@@ -42,6 +43,10 @@ def main() -> None:
                  linked.teams, linked.matches, settled)
     if linked.unmapped:
         logging.warning("unmapped teams, add them to team_aliases.csv: %s", ", ".join(linked.unmapped))
+    if linked.upcoming_unmapped:
+        alerts.send("unmapped_teams", "Unmapped teams in upcoming matches",
+                    "No paper bets on their matches until they're added to team_aliases.csv: "
+                    + ", ".join(linked.upcoming_unmapped), tags=("question",))
 
     placed = paper_trade(os.environ.get("API_URL", "http://api:8000"))
     if placed is not None:

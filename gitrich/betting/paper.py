@@ -1,13 +1,23 @@
-from datetime import timedelta
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 
 import psycopg
 
-from gitrich.betting.strategy import choose
+from gitrich.betting.strategy import Bet, choose
 
 # Every match is bet as if decided this long before the start, whenever the decision actually runs.
 LEAD = timedelta(hours=12)
 # Prices older than this at decision time are too stale to have been bettable.
 MAX_PRICE_AGE = timedelta(hours=12)
+
+
+@dataclass(frozen=True)
+class Placed:
+    team: str
+    opponent: str
+    tournament: str
+    start_time: datetime
+    bet: Bet
 
 
 def quotes_at(conn: psycopg.Connection, event_id: int, at) -> dict[tuple[str, str], float]:
@@ -35,9 +45,9 @@ def played_since(conn: psycopg.Connection, team_ids: list[int], at) -> bool:
     ).fetchone()[0]
 
 
-def place(conn: psycopg.Connection, matches: list[dict]) -> int:
+def place(conn: psycopg.Connection, matches: list[dict]) -> list[Placed]:
     """Logs a paper bet on every match the strategy picks, priced as at decision time, at most one per match."""
-    placed = 0
+    placed = []
     for m in matches:
         at = m["start_time"] - LEAD
         teams = [m["team1"]["id"], m["team2"]["id"]]
@@ -56,5 +66,7 @@ def place(conn: psycopg.Connection, matches: list[dict]) -> int:
             (m["odds_event_id"], m["prediction_id"], teams[0 if bet.selection == "team1" else 1], bet.selection,
              bet.bookmaker, bet.price, bet.stake, bet.p_model, bet.p_market, at),
         )
-        placed += cur.rowcount
+        if cur.rowcount:
+            ours, theirs = (m["team1"], m["team2"]) if bet.selection == "team1" else (m["team2"], m["team1"])
+            placed.append(Placed(ours["name"], theirs["name"], m["tournament"], m["start_time"], bet))
     return placed

@@ -28,6 +28,8 @@ class LinkStats:
     teams: int
     matches: int
     unmapped: list[str] = field(default_factory=list)
+    # The ones that matter now: no paper bets on their matches until they're mapped.
+    upcoming_unmapped: list[str] = field(default_factory=list)
 
 
 # Letters NFKD doesn't decompose into ASCII, so they would otherwise be dropped ("LØS" -> "ls").
@@ -47,16 +49,15 @@ def normalize(name: str) -> str:
 def link(conn: psycopg.Connection) -> LinkStats:
     teams = _map_teams(conn)
     matches = _link_matches(conn)
-    unmapped = [
-        name for (name,) in conn.execute("""
-            SELECT DISTINCT name FROM (
-                SELECT home_name AS name FROM core.odds_events WHERE home_team_id IS NULL
-                UNION
-                SELECT away_name FROM core.odds_events WHERE away_team_id IS NULL
-            ) n ORDER BY name
-        """)
-    ]
-    return LinkStats(teams=teams, matches=matches, unmapped=unmapped)
+    unmapped = conn.execute("""
+        SELECT name, bool_or(start_time > now()) FROM (
+            SELECT home_name AS name, start_time FROM core.odds_events WHERE home_team_id IS NULL
+            UNION ALL
+            SELECT away_name, start_time FROM core.odds_events WHERE away_team_id IS NULL
+        ) n GROUP BY name ORDER BY name
+    """).fetchall()
+    return LinkStats(teams=teams, matches=matches, unmapped=[name for name, _ in unmapped],
+                     upcoming_unmapped=[name for name, upcoming in unmapped if upcoming])
 
 
 def _map_teams(conn: psycopg.Connection) -> int:
