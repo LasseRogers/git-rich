@@ -238,3 +238,5 @@ systemctl --user list-timers git-rich-update            # the next run
 systemctl --user start git-rich-update                  # run one now
 systemctl --user disable --now git-rich-update.timer    # stop scheduling
 ```
+
+To run all of this unattended on a server, see [docs/server.md](docs/server.md).
