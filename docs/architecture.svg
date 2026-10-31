@@ -6,7 +6,7 @@
 #diagram .purple-bar{stroke:#7F77DD}
 #diagram .teal-line{stroke:#1D9E75}
 #diagram .c-purple>rect,#diagram rect.c-purple{fill:#EEEDFE;stroke:#534AB7}
-#diagram .c-teal>rect,#diagram rect.c-teal,#diagram ellipse.c-teal{fill:#E1F5EE;stroke:#0F6E56}
+#diagram .c-teal>rect,#diagram rect.c-teal,#diagram ellipse.c-teal,#diagram path.c-teal{fill:#E1F5EE;stroke:#0F6E56}
 #diagram text.th{font:500 14px IBM Plex Sans, Helvetica, Arial, sans-serif;fill:#1c2330}
 #diagram text.ts{font:400 12px IBM Plex Sans, Helvetica, Arial, sans-serif;fill:#596273}
 #diagram .c-purple>text.th{fill:#3C3489}
@@ -28,8 +28,12 @@
 <line x1="113" y1="84" x2="186" y2="84" class="arr" marker-end="url(#arrow)"/>
 <line x1="258" y1="154" x2="258" y2="124" class="arr" marker-end="url(#arrow)"/>
 <line x1="326" y1="92" x2="356" y2="92" class="arr" marker-end="url(#arrow)"/>
+<g><path d="M520 60 H640 L630 112 H530 Z" class="c-teal" stroke-width="0.5"/><g class="c-teal"><text class="th" x="580" y="78" text-anchor="middle" dominant-baseline="central">Object Storage</text><text class="ts" x="580" y="97" text-anchor="middle" dominant-baseline="central">Weekly backups</text></g></g>
+<g><polygon points="490,180 506,154 584,154 600,180 584,206 506,206" fill="none" class="teal-line" stroke-width="1"/><text class="th" x="545" y="171" text-anchor="middle" dominant-baseline="central">ntfy.sh</text><text class="ts" x="545" y="190" text-anchor="middle" dominant-baseline="central">Phone alerts</text></g>
 <rect class="box" x="20" y="240" width="640" height="345" rx="16" stroke-width="0.5"/>
 <text class="ts" x="644" y="574" text-anchor="end">Host, Docker Compose stack</text>
+<line x1="545" y1="242" x2="545" y2="210" class="arr" marker-end="url(#arrow)"/>
+<line x1="622" y1="242" x2="622" y2="116" class="arr" marker-end="url(#arrow)"/>
 <rect x="180" y="272" width="156" height="300" rx="8" fill="none" class="ink" stroke-width="0.5" stroke-dasharray="4 4"/>
 <g class="c-purple"><rect x="190" y="296" width="136" height="56" rx="4" stroke-width="0.5"/><text class="th" x="258" y="315" text-anchor="middle" dominant-baseline="central">ingest-odds</text><text class="ts" x="258" y="335" text-anchor="middle" dominant-baseline="central">Then paper bets</text></g>
 <line x1="200" y1="296" x2="200" y2="352" class="purple-bar" stroke-width="0.5"/><line x1="316" y1="296" x2="316" y2="352" class="purple-bar" stroke-width="0.5"/>
@@ -74,6 +78,7 @@
 <polygon points="40,656 45,647 55,647 60,656 55,665 45,665" fill="none" class="teal-line" stroke-width="1"/><text class="ts" x="66" y="656" dominant-baseline="central">Service</text>
 <rect class="c-teal" x="160" y="648" width="20" height="14" rx="2" stroke-width="0.5"/><line x1="164" y1="666" x2="176" y2="666" class="teal-line" stroke-width="1.5"/><text class="ts" x="188" y="656" dominant-baseline="central">Web page</text>
 <circle cx="280" cy="656" r="8" fill="none" class="ink" stroke-width="1"/><line x1="280" y1="656" x2="280" y2="651" class="ink" stroke-width="1.2"/><line x1="280" y1="656" x2="284" y2="658" class="ink" stroke-width="1.2"/><text class="ts" x="296" y="656" dominant-baseline="central">Schedule</text>
+<path d="M372 649 H390 L387 664 H375 Z" class="c-teal" stroke-width="0.5"/><text class="ts" x="398" y="656" dominant-baseline="central">Backup store</text>
 <line x1="490" y1="656" x2="510" y2="656" class="ink" stroke-width="1" stroke-dasharray="3 3"/><text class="ts" x="518" y="656" dominant-baseline="central">Read by</text>
 </g>
 </svg>
