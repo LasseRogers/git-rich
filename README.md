@@ -165,6 +165,7 @@ Gradient boosting on walk-forward pre-series features, grouped so groups can be 
 | `format` | best-of |
 | `h2h` | results against this opponent beyond what Elo expected, last 10 meetings |
 | `pool` | distinct champions per player over their last 20 games |
+| `uncertainty` | how far off each lineup's rating may be, Glicko-style: wide for new players, narrowing with every game and widening again during breaks; players with under 10 games for the team |
 
 Each test season is predicted by a model trained on all earlier seasons except the last, which is used for early stopping. Features are built exactly as the API builds them before a match, from each team's previous lineup, so test scores reflect live predictions. Every series is seen from both sides during training and prediction, so team order carries no information. The win probability may only rise with a team's Elo lead, Elo series probability and region strength, so sparse corners of the data can't teach the trees otherwise. The run logs the Elo log loss on the same series for comparison, and its `series_predictions.parquet` works with `backtest --model lgbm`.
 
