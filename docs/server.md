@@ -1,10 +1,17 @@
 # Running on a server
 
-git-rich runs unattended on an Oracle Cloud Always Free Arm instance (`VM.Standard.A1.Flex`, 2 OCPUs and 12 GB, Ubuntu 24.04). Any Linux host with Docker works; the images build for both x86 and Arm. Set the host's time zone first, since the timer follows it:
+git-rich runs unattended on an Oracle Cloud Always Free Arm instance (`VM.Standard.A1.Flex`, 2 OCPUs and 12 GB, Ubuntu 24.04). Any Linux host with Docker works; the images build for both x86 and Arm.
+
+## Preparing the host
+
+On a fresh Ubuntu host, clone the repository and run the setup script as the user that will run git-rich:
 
 ```bash
-sudo timedatectl set-timezone Europe/Copenhagen
+git clone https://github.com/LasseRogers/git-rich.git && cd git-rich
+./scripts/setup-server.sh
 ```
+
+It sets the time zone the timers follow (`Europe/Copenhagen`, or pass another), installs Docker with Compose and the OCI CLI for [backups](backup.md), and lets the timers run while nobody is logged in. It skips whatever is already in place, so rerunning it is harmless. Log out and back in afterwards if it says so, so that `docker` works without `sudo`.
 
 ## Moving an existing setup
 
@@ -16,10 +23,10 @@ docker compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -Fc --no-owne
 docker run --rm -v git-rich_mlflow_artifacts:/a:ro -v "$PWD":/out alpine tar czf /out/git-rich-artifacts.tgz -C /a .
 ```
 
-The database user follows `$USER`, which usually differs between machines, hence `--no-owner`. Copy the three files, `.env` and the Google key to the server, keep the key outside the repository, and point `GOOGLE_CREDENTIALS` at it. Then, from the files' directory:
+The database user follows `$USER`, which usually differs between machines, hence `--no-owner`. Copy the three files, `.env` and the Google key to the server, keep the key outside the repository, and point `GOOGLE_CREDENTIALS` at it. Then, from the directory holding them and the clone:
 
 ```bash
-git clone https://github.com/LasseRogers/git-rich.git && cd git-rich
+cd git-rich
 git worktree add data/odds odds-data
 docker compose build && docker compose create
 docker run --rm -v git-rich_mlflow_artifacts:/a -v "$OLDPWD":/in:ro alpine tar xzf /in/git-rich-artifacts.tgz -C /a

@@ -17,10 +17,9 @@ The server authenticates as itself (an instance principal), so no API key is sto
    Allow dynamic-group git-rich-server to manage objects in tenancy where target.bucket.name = 'git-rich-backups'
    ```
 
-On the server, install the OCI CLI and check that the instance can sign in:
+On the server, check that the instance can sign in with the OCI CLI, which `scripts/setup-server.sh` installs:
 
 ```bash
-sudo apt-get install -y pipx && pipx install oci-cli
 ~/.local/bin/oci os ns get --auth instance_principal
 ```
 
