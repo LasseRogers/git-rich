@@ -16,23 +16,11 @@ H2H_WINDOW = 10
 # Meetings are shrunk toward zero as if this many neutral ones came before them.
 H2H_PRIOR = 5
 
-# Glicko-style rating deviation per player, on the Elo scale: how far off a player's rating may be.
-# Unknown players start at RD_MAX; every game narrows it, every day without one widens it again.
-RD_MAX = 350.0
-RD_MIN = 50.0
-# Days without a game that take a settled player (RD_MIN) all the way back to unknown (RD_MAX). Three years
-# leaves a player with a game every few days around 85, a returning one after an off-season around 130,
-# and a new one around 110 after ten games.
-RD_RESET_DAYS = 3 * 365
-RD_GROWTH = (RD_MAX ** 2 - RD_MIN ** 2) / RD_RESET_DAYS
-# Games for the team after which a player no longer counts as new to it.
-NEWCOMER_GAMES = 10
-
 # Difference features flip sign when the teams are swapped.
 DIFF = [
     "elo_player_diff", "elo_team_diff", "league_offset_diff", "experience_diff",
     "form_diff", "momentum_diff", "gold_diff_15_diff", "rest_days_diff", "games_7d_diff",
-    "h2h_diff", "pool_diff", "uncertainty_diff", "newcomers_diff",
+    "h2h_diff", "pool_diff",
 ]
 
 GROUPS = {
@@ -44,7 +32,6 @@ GROUPS = {
     "format": ["best_of"],
     "h2h": ["h2h_diff"],
     "pool": ["pool_diff"],
-    "uncertainty": ["uncertainty_diff", "uncertainty_mean", "newcomers_diff"],
 }
 
 
@@ -69,10 +56,6 @@ class FeatureState:
         # Results against each opponent beyond what player Elo expected, keyed by the pair, from the lower id's side.
         self.h2h: dict[tuple[int, int], deque] = defaultdict(lambda: deque(maxlen=H2H_WINDOW))
         self.champions: dict[int, deque] = defaultdict(lambda: deque(maxlen=POOL_WINDOW))
-        # Per player: rating deviation and when it was last narrowed by a game.
-        self.deviation: dict[str, tuple[float, datetime]] = {}
-        # Games each player has played for each team.
-        self.team_games: Counter = Counter()
 
     def home(self, team: int, fallback: str) -> str:
         leagues = self.history[team].leagues
@@ -90,7 +73,6 @@ class FeatureState:
 
         p_game = elo.sigmoid((rp1 - rp2) * elo.LN10_400) if players1 and players2 else 0.5
         p_series = float(elo.series_probability(p_game, best_of)[0])
-        u1, u2 = self._uncertainty(players1, when), self._uncertainty(players2, when)
 
         return {
             "elo_player_diff": rp1 - rp2,
@@ -107,10 +89,6 @@ class FeatureState:
             "best_of": float(best_of),
             "h2h_diff": self._h2h(team1, team2),
             "pool_diff": self._pool(players1) - self._pool(players2),
-            "uncertainty_diff": u1 - u2,
-            # Not a difference: two unknown lineups make the whole match harder to call, whoever is favoured.
-            "uncertainty_mean": (u1 + u2) / 2,
-            "newcomers_diff": self._newcomers(team1, players1) - self._newcomers(team2, players2),
         }
 
     def upcoming(self, team1: int, team2: int, when: datetime, best_of: int,
@@ -139,8 +117,7 @@ class FeatureState:
 
         if blue_players and red_players:
             self._update_h2h(game, blue_players, red_players)
-            p_blue = self.players.play(blue_players, red_players, game.league, game.year, game.blue_won)[0]
-            self._narrow(blue_players + red_players, p_blue, game.played_at)
+            self.players.play(blue_players, red_players, game.league, game.year, game.blue_won)
         self.teams.play([game.blue_team_id], [game.red_team_id], game.league, game.year, game.blue_won)
 
         gd = game.blue_gold_diff_15
@@ -155,8 +132,6 @@ class FeatureState:
             h.leagues.append(game.league)
             if players:
                 h.lineup = frozenset(players)
-            for player in players:
-                self.team_games[team, player] += 1
         for player, champion in zip([*blue_players, *red_players],
                                     [*game.blue_champions, *game.red_champions]):
             self.champions[player].append(champion)
@@ -175,32 +150,6 @@ class FeatureState:
         meetings = self.h2h[key]
         value = sum(meetings) / (len(meetings) + H2H_PRIOR)
         return value if team1 < team2 else -value
-
-    def _deviation(self, player, when: datetime) -> float:
-        if player not in self.deviation:
-            return RD_MAX
-        rd, since = self.deviation[player]
-        days = max((when - since).total_seconds() / 86400, 0.0)
-        return min(math.sqrt(rd ** 2 + RD_GROWTH * days), RD_MAX)
-
-    def _narrow(self, players: list, p: float, when: datetime) -> None:
-        """One game's worth of information about each player: Glicko-1's update, simplified by
-        treating the opponents' ratings as exact. A lopsided game says less than an even one."""
-        information = elo.LN10_400 ** 2 * p * (1 - p)
-        for player in players:
-            rd = self._deviation(player, when)
-            self.deviation[player] = (max(1 / math.sqrt(1 / rd ** 2 + information), RD_MIN), when)
-
-    def _uncertainty(self, players: list, when: datetime) -> float:
-        """Rating deviation of a lineup's mean rating, taking the players' errors as independent."""
-        if not players:
-            return np.nan
-        return math.sqrt(sum(self._deviation(p, when) ** 2 for p in players)) / len(players)
-
-    def _newcomers(self, team: int, players: list) -> float:
-        if not players:
-            return np.nan
-        return float(sum(self.team_games[team, p] < NEWCOMER_GAMES for p in players))
 
     def _pool(self, players: list) -> float:
         """Distinct champions per player over their recent games, averaged over the lineup."""
