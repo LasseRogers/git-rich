@@ -11,7 +11,8 @@ API_URL = os.environ.get("API_URL", "http://api:8000")
 
 BETS = """
     SELECT b.id, e.start_time, e.tournament, t.name AS pick, o.name AS opponent,
-           b.bookmaker, b.price::float AS price, b.stake::float AS stake, b.p_model, b.p_market, b.result
+           b.bookmaker, b.price::float AS price, b.stake::float AS stake, b.p_model, b.p_market, b.result,
+           b.strategy, b.clv
     FROM core.bets b
     JOIN core.teams t ON t.id = b.team_id
     JOIN core.odds_events e ON e.id = b.odds_event_id

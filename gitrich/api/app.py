@@ -9,6 +9,7 @@ from psycopg.types.json import Jsonb
 from gitrich import alerts
 from gitrich.api.predictor import MODEL_NAME, Predictor
 from gitrich.betting import paper
+from gitrich.betting.strategy import LABELS, STRATEGIES
 from gitrich.db import connect
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -79,15 +80,16 @@ def paper_trade() -> dict:
         placed = paper.place(conn, _predict(conn, _events(
             conn,
             """e.start_time - %s <= now()
-               AND NOT EXISTS (SELECT 1 FROM core.bets b WHERE b.odds_event_id = e.id AND b.mode = 'paper')
+               AND (SELECT count(DISTINCT b.strategy) FROM core.bets b
+                    WHERE b.odds_event_id = e.id AND b.mode = 'paper') < %s
                -- Matches only seen in backfilled history were never live, so there was nothing to trade.
                AND EXISTS (SELECT 1 FROM core.odds_snapshots l WHERE l.odds_event_id = e.id AND NOT l.backfilled)""",
-            (paper.LEAD,),
+            (paper.LEAD, len(STRATEGIES)),
         )))
     # After the commit, so an alert never announces a bet that was rolled back.
     for p in placed:
         alerts.send(
-            "new_bets", f"Paper bet on {p.team}",
+            "new_bets", f"Paper bet on {p.team} ({LABELS[p.strategy]})",
             f"{p.bet.stake:.0f} kr on {p.team} against {p.opponent} at {p.bet.price:.2f} ({p.bet.bookmaker}), "
             f"edge {p.bet.edge:.1%}. {p.tournament}, starts {p.start_time:%a %d %b %H:%M} UTC.",
             tags=("moneybag",),

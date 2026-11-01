@@ -2,6 +2,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
+from gitrich.betting.strategy import LABELS, STRATEGIES
 from gitrich.panel import data
 
 st.set_page_config(page_title="git-rich", layout="centered")
@@ -9,6 +10,10 @@ st.set_page_config(page_title="git-rich", layout="centered")
 # Categorical slot 1, stepped separately for light and dark surfaces.
 LINE = "#3987e5" if st.context.theme.type == "dark" else "#2a78d6"
 tz = st.context.timezone or "UTC"
+ABOUT = {
+    "model": "Bets where the model rates a team higher than the odds do.",
+    "sharp": "Bets where a bookmaker pays more than Pinnacle's margin-free price. No model involved.",
+}
 
 
 def local(ts) -> pd.Timestamp:
@@ -30,20 +35,25 @@ with upcoming_tab:
     for b in upcoming.itertuples():
         with st.container(border=True):
             st.markdown(f"**Bet on {b.pick}** at odds {b.price:.2f} ({b.bookmaker})")
-            st.caption(" · ".join(filter(None, [f"vs {b.opponent}", when(b.start_time), b.tournament])))
+            st.caption(" · ".join(filter(None, [LABELS[b.strategy], f"vs {b.opponent}", when(b.start_time),
+                                                 b.tournament])))
             with st.expander("Details"):
+                sharp = b.strategy == "sharp"
                 c = st.columns(3)
-                c[0].metric("Model", f"{b.p_model:.0%}", help="The model's chance this team wins.")
+                c[0].metric("Model", "–" if sharp else f"{b.p_model:.0%}", help="The model's chance this team wins.")
                 c[1].metric("Bookmakers", f"{b.p_market:.0%}" if pd.notna(b.p_market) else "–",
                             help="Pinnacle's chance, with its margin removed.")
-                c[2].metric("Edge", f"{b.p_model * b.price - 1:+.0%}",
-                            help="Expected profit per kr staked, if the model is right.")
+                c[2].metric("Edge", f"{(b.p_market if sharp else b.p_model) * b.price - 1:+.0%}",
+                            help=f"Expected profit per kr staked, if {'Pinnacle' if sharp else 'the model'} is right.")
                 stake = st.slider("Stake (kr)", 10, 1000, max(10, round(b.stake / 10) * 10), 10, key=f"stake-{b.id}",
                                   help=f"The paper bet uses {b.stake:.0f} kr.")
                 st.markdown(f"Possible payout: **{stake * b.price:,.0f} kr**")
 
 with paper_tab:
+    strategy = st.segmented_control("Strategy", STRATEGIES, default="model", format_func=LABELS.get) or "model"
+    st.caption(ABOUT[strategy])
     settled = data.settled_bets()
+    settled = settled[settled.strategy == strategy]
     if settled.empty:
         st.header("No finished bets yet")
         st.caption("Results show up here once matches with paper bets have been played.")
@@ -53,7 +63,10 @@ with paper_tab:
         pnl = per_bet * settled.price.where(settled.result == "won", 0) - per_bet
         profit = pnl.sum()
         st.header(f"{'Up' if profit >= 0 else 'Down'} {abs(profit):,.0f} kr")
-        st.caption(f"{len(settled)} bets, {(settled.result == 'won').sum()} won.")
+        clv = f", average CLV {settled.clv.mean():+.1%}" if settled.clv.notna().any() else ""
+        n = len(settled)
+        st.caption(f"{n} bet{'s' if n != 1 else ''}, {(settled.result == 'won').sum()} won{clv}.",
+                   help="CLV: how much better the price was than Pinnacle's margin-free closing price.")
 
         curve = pd.DataFrame({"profit": [0.0, *pnl.cumsum()]})
         curve["n"] = curve.index

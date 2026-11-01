@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 
 import psycopg
 
-from gitrich.betting.strategy import Bet, choose
+from gitrich.betting.strategy import Bet, choose, choose_sharp
 
 # Every match is bet as if decided this long before the start, whenever the decision actually runs.
 LEAD = timedelta(hours=12)
@@ -17,6 +17,7 @@ class Placed:
     opponent: str
     tournament: str
     start_time: datetime
+    strategy: str
     bet: Bet
 
 
@@ -46,27 +47,31 @@ def played_since(conn: psycopg.Connection, team_ids: list[int], at) -> bool:
 
 
 def place(conn: psycopg.Connection, matches: list[dict]) -> list[Placed]:
-    """Logs a paper bet on every match the strategy picks, priced as at decision time, at most one per match."""
+    """Logs the paper bet each strategy picks on every match, priced as at decision time, at most one per strategy."""
     placed = []
     for m in matches:
         at = m["start_time"] - LEAD
         teams = [m["team1"]["id"], m["team2"]["id"]]
-        if played_since(conn, teams, at):
-            continue
-        bet = choose(m["p_team1"], quotes_at(conn, m["odds_event_id"], at), m["cross_league"])
-        if bet is None:
-            continue
-        cur = conn.execute(
-            """
-            INSERT INTO core.bets (odds_event_id, prediction_id, team_id, selection, bookmaker,
-                                   price, stake, p_model, p_market, mode, placed_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'paper', %s)
-            ON CONFLICT (odds_event_id) WHERE mode = 'paper' DO NOTHING
-            """,
-            (m["odds_event_id"], m["prediction_id"], teams[0 if bet.selection == "team1" else 1], bet.selection,
-             bet.bookmaker, bet.price, bet.stake, bet.p_model, bet.p_market, at),
-        )
-        if cur.rowcount:
-            ours, theirs = (m["team1"], m["team2"]) if bet.selection == "team1" else (m["team2"], m["team1"])
-            placed.append(Placed(ours["name"], theirs["name"], m["tournament"], m["start_time"], bet))
+        quotes = quotes_at(conn, m["odds_event_id"], at)
+        picks = {"sharp": choose_sharp(quotes)}
+        # Only the model can learn about results after decision time; the sharp line was priced before them.
+        if not played_since(conn, teams, at):
+            picks["model"] = choose(m["p_team1"], quotes, m["cross_league"])
+        for strategy, bet in picks.items():
+            if bet is None:
+                continue
+            cur = conn.execute(
+                """
+                INSERT INTO core.bets (odds_event_id, prediction_id, team_id, selection, bookmaker,
+                                       price, stake, p_model, p_market, mode, placed_at, strategy)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'paper', %s, %s)
+                ON CONFLICT (odds_event_id, strategy) WHERE mode = 'paper' DO NOTHING
+                """,
+                (m["odds_event_id"], m["prediction_id"] if strategy == "model" else None,
+                 teams[0 if bet.selection == "team1" else 1], bet.selection,
+                 bet.bookmaker, bet.price, bet.stake, bet.p_model, bet.p_market, at, strategy),
+            )
+            if cur.rowcount:
+                ours, theirs = (m["team1"], m["team2"]) if bet.selection == "team1" else (m["team2"], m["team1"])
+                placed.append(Placed(ours["name"], theirs["name"], m["tournament"], m["start_time"], strategy, bet))
     return placed

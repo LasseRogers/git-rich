@@ -200,13 +200,12 @@ Lineups aren't known before a match, so each team's most recent lineup is assume
 
 `ingest-odds` settles finished bets, then places new ones through `POST /paper-trade`.
 
-Each match is decided as of 12 hours before its start, at prices captured in the 12 hours before that, so a late run catches up on missed matches without seeing the future. A match is skipped if either team has played since its decision time, so load odds before match data.
+Each match is decided as of 12 hours before its start, at prices captured in the 12 hours before that, so a late run catches up on missed matches without seeing the future.
 
-A match gets at most one bet, at the best available price, when:
+Two strategies bet side by side, each at most once per match, at the best available price and only when Pinnacle has a price, which closing line value is measured against:
 
-- Pinnacle has a price, which closing line value is measured against
-- both teams are from the same region; the model overrates weaker regions in international games
-- the edge is between 3% and 15%; larger edges are almost always model errors
+- **Model** (`model`) bets when the model rates a team higher than the odds do, by an edge between 3% and 15%; larger edges are almost always model errors. It skips matches between teams from different regions, which the model overrates, and matches where either team has played since the decision time, so load odds before match data.
+- **Pinnacle line** (`sharp`) bets when another bookmaker pays more than Pinnacle's margin-free price, by the same 3% to 15%, with no model involved. It needs a second bookmaker's prices, which `collect-odds` captures twice a day.
 
 Every bet is a flat `STAKE` of 20 kr. The rules are in `gitrich/betting/strategy.py`.
 
