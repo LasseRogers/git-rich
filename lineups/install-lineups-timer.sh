@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Runs pi/fetch_lineups.py every 30 minutes through a systemd user timer, with lingering so it keeps
+# Runs lineups/fetch_lineups.py every 30 minutes through a systemd user timer, with lingering so it keeps
 # running while nobody is logged in.
-# Usage: pi/install-lineups-timer.sh user@server [ssh key, default ~/.ssh/git_rich_lineups]
+# Usage: lineups/install-lineups-timer.sh user@server [ssh key, default ~/.ssh/git_rich_lineups]
 set -euo pipefail
 
 server=${1:?usage: $0 user@server [ssh key]}
@@ -21,7 +21,7 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/python3 $repo/pi/fetch_lineups.py --server $server --key $key
+ExecStart=/usr/bin/python3 $repo/lineups/fetch_lineups.py --server $server --key $key
 # Stays out of the way of anything else the Pi runs.
 Nice=10
 EOF

@@ -1,9 +1,10 @@
-"""Snapshots RotoWire's League of Legends lineups page and ships each change to the server.
+"""Snapshots RotoWire's League of Legends lineups and ships each change to the server.
 
-Runs on a Raspberry Pi at home, because RotoWire's Cloudflare turns away the cloud server's address.
-It stores only the page's lineup section, and only when that has changed, so a quiet day writes nothing.
-Reading players out of the snapshots happens later on the server, so the raw copies stay re-readable.
-Stdlib only: the Pi needs no packages beyond python3 and rsync.
+Runs on a collector host with a residential address: Cloudflare challenges requests from data-centre
+ASNs, which rules out the server itself. Only the lineup section is kept, and only when it differs from
+the previous snapshot, so unchanged pages cost no storage. Snapshots are stored raw and parsed on the
+server, so a parser fix can be replayed over the full history. Stdlib only, so the host needs nothing
+beyond python3 and rsync.
 """
 import argparse
 import gzip
