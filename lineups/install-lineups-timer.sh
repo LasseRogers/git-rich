@@ -22,7 +22,7 @@ After=network-online.target
 [Service]
 Type=oneshot
 ExecStart=/usr/bin/python3 $repo/lineups/fetch_lineups.py --server $server --key $key
-# Stays out of the way of anything else the Pi runs.
+# Low priority, so the collector never competes with other work on the host.
 Nice=10
 EOF
 
