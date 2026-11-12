@@ -27,12 +27,15 @@ USER_AGENT = "git-rich lineup collector (personal, non-commercial; checks every 
 
 
 def rotowire(page: str) -> str:
-    """The list of match boxes; the tools box that follows it starts the ads and navigation."""
+    """The match boxes. The block is cut by its own closing tag because on days without matches it is
+    empty and the tools box after the last match, which ends it otherwise, isn't there."""
     start = page.find('<div class="lineups">')
     if start < 0:
         raise ValueError("no lineup section, so the page layout has probably changed")
-    end = page.find('<div class="lineup is-tools">', start)
-    return page[start:end if end > 0 else len(page)]
+    block = balanced_div(page, start)
+    tools = block.find('<div class="lineup is-tools">')
+    # Cloudflare injects a per-request script, which would make every fetch look like a change.
+    return re.sub(r"<script\b.*?</script>", "", block[:tools] if tools > 0 else block, flags=re.S)
 
 
 # LineStar renders its lineups server-side once, then fills in status, odds and projections with Angular
