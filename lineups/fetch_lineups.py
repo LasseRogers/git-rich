@@ -11,19 +11,26 @@ import gzip
 import hashlib
 import json
 import logging
+import os
 import re
 import subprocess
 import sys
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable
 
 log = logging.getLogger("fetch-lineups")
 
 USER_AGENT = "git-rich lineup collector (personal, non-commercial; checks every 30 minutes)"
+NTFY_SERVER = "https://ntfy.sh"
+# A source this many runs in a row without a result is broken rather than briefly unreachable.
+FAILURE_LIMIT = 3
+# More snapshots than this in a day means something volatile slipped into a source's extract: real
+# lineups change a few times a day at most.
+CHURN_LIMIT = 20
 
 
 def rotowire(page: str) -> str:
@@ -109,6 +116,53 @@ def ship(data_dir: Path, server: str, key: Path) -> None:
             folder.rmdir()
 
 
+class Health:
+    """Per-check state across runs, so alerts fire once per problem and day rather than every run."""
+
+    def __init__(self, path: Path, now: datetime):
+        self.path, self.now = path, now
+        self.state = json.loads(path.read_text()) if path.exists() else {}
+
+    def record(self, check: str, ok: bool, saved: bool = False) -> None:
+        entry = self.state.setdefault(check, {"failures": 0, "saves": [], "alerted": {}})
+        entry["failures"] = 0 if ok else entry["failures"] + 1
+        day_ago = (self.now - timedelta(days=1)).isoformat()
+        entry["saves"] = [t for t in entry["saves"] if t > day_ago] + ([self.now.isoformat()] if saved else [])
+        if entry["failures"] == FAILURE_LIMIT:
+            self.alert(entry, "failing", f"Lineups: {check} failing",
+                       f"{check} has failed {FAILURE_LIMIT} runs in a row; see the collector's log.")
+        if len(entry["saves"]) > CHURN_LIMIT:
+            self.alert(entry, "churn", f"Lineups: {check} saves every run",
+                       f"{check} saved {len(entry['saves'])} snapshots in 24 hours, so something that changes "
+                       "on every fetch has probably slipped into its extract.")
+
+    def alert(self, entry: dict, kind: str, title: str, message: str) -> None:
+        today = self.now.date().isoformat()
+        if entry["alerted"].get(kind) == today:
+            return
+        entry["alerted"][kind] = today
+        log.warning("%s", message)
+        notify(title, message)
+
+    def save(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(json.dumps(self.state))
+
+
+def notify(title: str, message: str) -> None:
+    """Best effort, and off unless NTFY_TOPIC is set: an alert that can't be delivered is only logged."""
+    topic = os.environ.get("NTFY_TOPIC", "").strip()
+    if not topic:
+        return
+    body = {"topic": topic, "title": title, "message": message, "priority": 4, "tags": ["warning"]}
+    request = urllib.request.Request(NTFY_SERVER, data=json.dumps(body).encode(), method="POST",
+                                     headers={"Content-Type": "application/json"})
+    try:
+        urllib.request.urlopen(request, timeout=10).close()
+    except (urllib.error.URLError, TimeoutError) as e:
+        log.warning("alert not sent: %s", getattr(e, "reason", e))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="fetch-lineups", description=__doc__.splitlines()[0])
     parser.add_argument("--server", required=True, help="user@host the snapshots are sent to")
@@ -120,6 +174,7 @@ def main() -> None:
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     now = datetime.now(timezone.utc).replace(microsecond=0)
+    health = Health(args.data_dir / "health.json", now)
     failed = False
     # One source failing, from a block or a layout change, must not stop the others.
     for name in args.sources.split(","):
@@ -129,19 +184,25 @@ def main() -> None:
         except urllib.error.HTTPError as e:
             log.error("%s: HTTP %d", name, e.code)
             failed = True
+            health.record(name, ok=False)
             continue
         except (urllib.error.URLError, TimeoutError, ValueError) as e:
             log.error("%s: %s", name, e)
             failed = True
+            health.record(name, ok=False)
             continue
         saved = save_if_changed(name, source.url, content, args.data_dir, now)
         log.info("%s: saved %s", name, saved.name if saved else "nothing, lineups unchanged")
+        health.record(name, ok=True, saved=saved is not None)
 
     try:
         ship(args.data_dir, args.server, args.key)
+        health.record("sending", ok=True)
     except subprocess.CalledProcessError as e:
         log.error("sending to %s failed (rsync exit %d), will retry next run", args.server, e.returncode)
         failed = True
+        health.record("sending", ok=False)
+    health.save()
     sys.exit(1 if failed else 0)
 
 

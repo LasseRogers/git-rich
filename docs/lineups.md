@@ -48,3 +48,17 @@ lineups/install-lineups-timer.sh ubuntu@<server>
 ```
 
 `systemctl --user status git-rich-lineups.service` shows the last run and its output. Update with `git pull`; the timer picks up the new code on its next run.
+
+## Alerts
+
+The collector sends a phone alert through [ntfy](alerts.md) when a source or the transfer to the server fails three runs in a row, or when a source saves more than 20 snapshots in a day. The latter means something that changes on every fetch has slipped into its extract, which makes the snapshots useless for timing lineup changes. Each problem alerts at most once a day.
+
+Alerts are off until the host has the topic. Store it readable only by you, without it showing on screen or in the shell history:
+
+```bash
+mkdir -p ~/.config/git-rich-lineups
+read -rsp "ntfy topic: " topic && echo && printf 'NTFY_TOPIC=%s\n' "$topic" > ~/.config/git-rich-lineups/env && unset topic
+chmod 600 ~/.config/git-rich-lineups/env
+```
+
+The timer reads the file on each run, so no restart is needed.

@@ -15,12 +15,14 @@ command -v rsync >/dev/null || { echo "rsync is missing: sudo apt-get install rs
 mkdir -p "$units"
 cat > "$units/git-rich-lineups.service" <<EOF
 [Unit]
-Description=Snapshot RotoWire LoL lineups and send changes to the git-rich server
+Description=Snapshot published LoL lineups and send changes to the git-rich server
 Wants=network-online.target
 After=network-online.target
 
 [Service]
 Type=oneshot
+# Optional: NTFY_TOPIC=... here turns on phone alerts. The leading dash lets the file be absent.
+EnvironmentFile=-%h/.config/git-rich-lineups/env
 ExecStart=/usr/bin/python3 $repo/lineups/fetch_lineups.py --server $server --key $key
 # Low priority, so the collector never competes with other work on the host.
 Nice=10
@@ -28,7 +30,7 @@ EOF
 
 cat > "$units/git-rich-lineups.timer" <<EOF
 [Unit]
-Description=Snapshot RotoWire LoL lineups every 30 minutes
+Description=Snapshot published LoL lineups every 30 minutes
 
 [Timer]
 OnCalendar=*:00/30
