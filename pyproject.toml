@@ -17,6 +17,9 @@ dependencies = [
     "streamlit==1.66.1",
 ]
 
+[project.optional-dependencies]
+test = ["pytest==9.2.0"]
+
 [project.scripts]
 ingest-lol = "gitrich.lol.ingest:main"
 ingest-odds = "gitrich.odds.ingest:main"
@@ -34,3 +37,6 @@ include = ["gitrich*"]
 
 [tool.setuptools.package-data]
 gitrich = ["odds/*.csv"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

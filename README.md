@@ -239,3 +239,12 @@ systemctl --user disable --now git-rich-update.timer    # stop scheduling
 ```
 
 To run all of this unattended on a server, see [docs/server.md](docs/server.md).
+
+## Tests
+
+```bash
+pip install -e ".[test]"
+pytest
+```
+
+The tests cover the betting rules, team-order symmetry of the features and the alias file. They need no database or network.
