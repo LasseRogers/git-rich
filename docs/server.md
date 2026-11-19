@@ -51,3 +51,15 @@ ssh -L 8501:localhost:8501 -L 5050:localhost:5050 -L 8000:localhost:8000 ubuntu@
 The panel is then at http://localhost:8501, MLflow at http://localhost:5050 and the API at http://localhost:8000, or whichever ports `.env` sets.
 
 The server is the only copy of the paper bets and MLflow history, so set up [weekly backups](backup.md).
+
+## Queries
+
+`sql/` holds read-only queries for checking on the system, run with `scripts/query.sh`:
+
+```bash
+scripts/query.sh                # lists the queries
+scripts/query.sh strategies     # paper bets, profit and closing line value per strategy
+scripts/query.sh team ninjas    # queries can take one argument
+```
+
+The session is read-only, so a query can never change data. Schema changes belong in `migrations/`.
