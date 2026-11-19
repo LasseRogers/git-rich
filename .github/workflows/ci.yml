@@ -1,0 +1,41 @@
+name: ci
+
+# Runs the tests and lints the shell scripts on every push and on every pull request, so a pull request
+# shows whether it is safe to merge.
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+# A new push to the same branch makes the previous run pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      # The same Python as the Docker image.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -e ".[test]"
+
+      - run: pytest
+
+  shellcheck:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+
+      # shellcheck comes preinstalled on GitHub's Ubuntu runners.
+      - run: shellcheck scripts/*.sh
